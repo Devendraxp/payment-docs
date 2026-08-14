@@ -1,0 +1,113 @@
+---
+title: "GET /gateways/{gatewayName} — Get Gateway Config"
+sidebarTitle: "GET /gateways/:name"
+description: "Retrieve the full simulator configuration for a single named payment gateway, including its success rate, latency, and affinity weights."
+---
+
+The `GET /gateways/{gatewayName}` endpoint fetches the complete configuration record for one specific payment gateway by its internal name. You can use this endpoint to verify a gateway's current settings, inspect its affinity maps, or confirm whether it is enabled before running tests. No authentication is required.
+
+## Endpoint
+
+```
+GET http://localhost:3000/gateways/{gatewayName}
+```
+
+## Path Parameters
+
+<ParamField path="gatewayName" type="string" required>
+  The internal machine-readable name of the gateway. Known values are `razorpay`, `cashfree`, `payu`, `juspay`, and `hdfc_gateway`. The lookup is case-sensitive.
+</ParamField>
+
+## Example Request
+
+```bash
+curl http://localhost:3000/gateways/razorpay
+```
+
+## Response
+
+On success the endpoint returns a single gateway object with the following fields.
+
+<ResponseField name="id" type="string" required>
+  Unique UUID for the gateway record.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Internal machine-readable identifier (e.g., `"razorpay"`).
+</ResponseField>
+
+<ResponseField name="displayName" type="string" required>
+  Human-readable label for the gateway (e.g., `"Razorpay"`).
+</ResponseField>
+
+<ResponseField name="successRate" type="number" required>
+  Baseline success rate as a decimal between `0` and `1`.
+</ResponseField>
+
+<ResponseField name="baseLatencyMs" type="integer" required>
+  Baseline p50 response latency in milliseconds.
+</ResponseField>
+
+<ResponseField name="supportedMethods" type="string[]" required>
+  Payment methods accepted by this gateway: any combination of `UPI`, `CARD`, `NETBANKING`, and `WALLET`.
+</ResponseField>
+
+<ResponseField name="methodAffinity" type="object" required>
+  Per-method scoring multipliers. Keys are method names; values are numeric multipliers.
+</ResponseField>
+
+<ResponseField name="bankAffinity" type="object" required>
+  Per-bank scoring multipliers. Keys are uppercased bank names; values are numeric multipliers.
+</ResponseField>
+
+<ResponseField name="amountTiers" type="object" required>
+  Amount-tier scoring multipliers with keys such as `small`, `medium`, and `large`.
+</ResponseField>
+
+<ResponseField name="timePenalties" type="object" required>
+  Hour-of-day penalty map (24-hour UTC). Keys are hour strings; values are penalty multipliers.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean" required>
+  Whether the gateway participates in routing. When `false`, the orchestrator skips it entirely.
+</ResponseField>
+
+## Example Response
+
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "razorpay",
+  "displayName": "Razorpay",
+  "successRate": 0.87,
+  "baseLatencyMs": 320,
+  "supportedMethods": ["UPI", "CARD", "NETBANKING", "WALLET"],
+  "methodAffinity": {
+    "UPI": 1.2,
+    "CARD": 1.0,
+    "NETBANKING": 0.95,
+    "WALLET": 1.05
+  },
+  "bankAffinity": {
+    "HDFC": 1.15,
+    "ICICI": 1.05,
+    "SBI": 0.9
+  },
+  "amountTiers": {
+    "small": 1.1,
+    "medium": 1.0,
+    "large": 0.95
+  },
+  "timePenalties": {
+    "2": 0.8,
+    "3": 0.75
+  },
+  "enabled": true
+}
+```
+
+## Error Responses
+
+| Status | Description |
+|--------|-------------|
+| `404 Not Found` | No gateway with the given name exists. Check spelling and case. |

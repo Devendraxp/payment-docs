@@ -1,0 +1,202 @@
+---
+title: "Create and Track Payments with Payment Gateway"
+sidebarTitle: "Create a Payment"
+description: "Learn how to create payments for UPI, card, netbanking, and wallet methods, then track status, attempts, and routing decisions."
+---
+
+The Payment Gateway exposes a single `POST /payments` endpoint that accepts a payment request, selects the best available gateway, and returns a result synchronously. Every request must carry a unique `idempotency-key` header so that retrying a failed network call never creates a duplicate charge. The endpoint is rate-limited to **100 requests per minute per IP address**.
+
+## Create a Payment
+
+Send a `POST` request to `/payments` with the fields below. The `amountMinor` field must be an integer in the **smallest currency unit** — for INR, that means paise (e.g., `33000` = ₹330.00).
+
+**Required fields**
+
+<ParamField body="merchantId" type="string" required>
+  Your merchant identifier (e.g., `"amazon"`, `"swiggy"`).
+</ParamField>
+
+<ParamField body="customerId" type="string" required>
+  A stable identifier for the end customer. Used for experiment assignment and analytics.
+</ParamField>
+
+<ParamField body="amountMinor" type="integer" required>
+  Payment amount in the smallest currency unit. Must be ≥ 1. For INR, pass paise.
+</ParamField>
+
+<ParamField body="paymentMethod" type="string" required>
+  One of `UPI`, `CARD`, `NETBANKING`, or `WALLET`.
+</ParamField>
+
+<ParamField body="instrument" type="object" required>
+  Method-specific instrument details. Shape varies by `paymentMethod` — see examples below.
+</ParamField>
+
+<Tabs>
+  <Tab title="UPI">
+    Pass a `vpa` (Virtual Payment Address) and the issuing `bank` in the instrument.
+
+    ```bash
+    curl -X POST http://localhost:3000/payments \
+      -H "Content-Type: application/json" \
+      -H "idempotency-key: pay-upi-001" \
+      -d '{
+        "merchantId": "amazon",
+        "customerId": "cust_001",
+        "amountMinor": 33000,
+        "paymentMethod": "UPI",
+        "instrument": {
+          "vpa": "user@paytm",
+          "bank": "HDFC"
+        }
+      }'
+    ```
+  </Tab>
+  <Tab title="Card">
+    Pass the `cardNetwork`, issuing `bank`, and the last four digits of the card.
+
+    ```bash
+    curl -X POST http://localhost:3000/payments \
+      -H "Content-Type: application/json" \
+      -H "idempotency-key: pay-card-001" \
+      -d '{
+        "merchantId": "swiggy",
+        "customerId": "cust_002",
+        "amountMinor": 150000,
+        "paymentMethod": "CARD",
+        "instrument": {
+          "cardNetwork": "VISA",
+          "bank": "HDFC",
+          "last4": "1234"
+        }
+      }'
+    ```
+
+    Supported `cardNetwork` values: `VISA`, `MASTERCARD`.
+  </Tab>
+  <Tab title="Netbanking">
+    Pass only the `bank` code for netbanking payments.
+
+    ```bash
+    curl -X POST http://localhost:3000/payments \
+      -H "Content-Type: application/json" \
+      -H "idempotency-key: pay-nb-001" \
+      -d '{
+        "merchantId": "amazon",
+        "customerId": "cust_003",
+        "amountMinor": 75000,
+        "paymentMethod": "NETBANKING",
+        "instrument": {
+          "bank": "HDFC"
+        }
+      }'
+    ```
+  </Tab>
+  <Tab title="Wallet">
+    Pass the `walletProvider` name. Supported values: `PAYTM`, `PHONEPE`.
+
+    ```bash
+    curl -X POST http://localhost:3000/payments \
+      -H "Content-Type: application/json" \
+      -H "idempotency-key: pay-wallet-001" \
+      -d '{
+        "merchantId": "amazon",
+        "customerId": "cust_004",
+        "amountMinor": 22000,
+        "paymentMethod": "WALLET",
+        "instrument": {
+          "walletProvider": "PAYTM"
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+## Understand the Response
+
+A successful call returns a JSON object with the following fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `paymentId` | UUID | Unique identifier for this payment. Use it for all subsequent lookups. |
+| `status` | string | Final payment status — see [Payment Status](#payment-status) below. |
+| `finalGateway` | string | The gateway that produced the final outcome (e.g., `"razorpay"`). |
+| `totalAttempts` | integer | Total number of gateway attempts made for this payment. |
+| `totalLatencyMs` | integer | Cumulative latency across all attempts, in milliseconds. |
+| `message` | string | Human-readable summary of the outcome. |
+
+```json
+{
+  "paymentId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "status": "SUCCESS",
+  "finalGateway": "cashfree",
+  "totalAttempts": 2,
+  "totalLatencyMs": 1340,
+  "message": "Payment completed successfully"
+}
+```
+
+## Payment Status
+
+| Status | Meaning |
+|---|---|
+| `SUCCESS` | The payment was accepted by a gateway and is confirmed. |
+| `FAILED` | All gateway attempts were exhausted or a non-retryable error was returned. No charge was made. |
+| `PENDING_VERIFICATION` | The gateway timed out before confirming the outcome. |
+
+<Note>
+  When a payment lands in `PENDING_VERIFICATION`, it means the gateway did not respond within the allowed window. The system will resolve the status asynchronously via a background verification process. Poll `GET /payments/{paymentId}/status-verification` or wait for a webhook to receive the final `SUCCESS` or `FAILED` outcome. Do **not** re-submit the payment — use the same `idempotency-key` to check the result.
+</Note>
+
+## Track a Payment
+
+### Get payment details
+
+Retrieve the current state of a payment by its ID.
+
+```bash
+curl http://localhost:3000/payments/{paymentId}
+```
+
+### List gateway attempts
+
+Get a full list of every gateway attempt made for the payment. Each attempt shows which gateway was tried, the outcome, latency, and error details.
+
+```bash
+curl http://localhost:3000/payments/{paymentId}/attempts
+```
+
+**Example attempt object:**
+
+```json
+{
+  "id": "7b4e3a12-...",
+  "paymentId": "3fa85f64-...",
+  "gatewayName": "razorpay",
+  "attemptNumber": 1,
+  "status": "FAILED",
+  "errorCode": "GATEWAY_TIMEOUT",
+  "errorType": "RETRYABLE",
+  "latencyMs": 5000,
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+Attempt `status` values: `SUCCESS`, `FAILED`, `TIMEOUT`.  
+`errorType` values: `RETRYABLE` (another gateway will be tried), `NON_RETRYABLE` (routing stops immediately), `TIMEOUT`.
+
+### Get the routing decision
+
+Retrieve the routing decision record that was computed when the payment was created. This shows which gateways were ranked and in what order.
+
+```bash
+curl http://localhost:3000/payments/{paymentId}/routing-decision
+```
+
+### Check verification status
+
+For payments in `PENDING_VERIFICATION`, query the async verification result.
+
+```bash
+curl http://localhost:3000/payments/{paymentId}/status-verification
+```

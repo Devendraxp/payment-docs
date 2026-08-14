@@ -1,0 +1,128 @@
+---
+title: "Payment Lifecycle: From Request to Final Status"
+sidebarTitle: "Payment Lifecycle"
+description: "Understand the full journey of a payment — from submission through gateway routing, success or failure, and async timeout resolution."
+---
+
+Every payment you submit travels through a well-defined sequence of stages: it is scored and routed across one or more gateways, each attempt is recorded, and the payment settles into a final status. Understanding this lifecycle helps you build resilient integrations, handle edge cases like timeouts gracefully, and interpret the data returned by the API.
+
+## The Payment Lifecycle at a Glance
+
+<Steps>
+  <Step title="Submit the Payment">
+    Send a `POST /payments` request with your `merchantId`, `customerId`, `amountMinor`, `paymentMethod`, and instrument details. Include an `idempotency-key` header on every request. The gateway accepts up to **100 requests per minute per IP**.
+  </Step>
+  <Step title="Gateway Scoring and Ranking">
+    The orchestrator scores every enabled gateway that supports your payment method. Each gateway receives a composite score based on real-time success rate, latency, method affinity, bank affinity, amount fit, and time-of-day factors. The result is an ordered list of candidates from highest to lowest score.
+  </Step>
+  <Step title="Attempt the Top-Ranked Gateway">
+    The orchestrator picks the first gateway from the ranked list that is not circuit-broken and dispatches the payment. The attempt is recorded, including the gateway name, attempt number, latency, and outcome.
+  </Step>
+  <Step title="Evaluate the Attempt Outcome">
+    Three outcomes are possible for each gateway attempt:
+
+    - **SUCCESS** — the gateway accepted the payment. The payment status becomes `SUCCESS` and routing stops.
+    - **FAILED (retryable)** — the gateway returned a failure that allows a retry (e.g., a transient gateway error). The orchestrator moves to the next ranked gateway.
+    - **FAILED (non-retryable)** — the gateway returned a definitive failure (e.g., card declined). The payment status becomes `FAILED` immediately; no further gateways are tried.
+    - **TIMEOUT** — the gateway did not respond within the latency budget. The payment enters `PENDING_VERIFICATION` and is handed to the async verifier.
+  </Step>
+  <Step title="Retry on the Next Gateway (Retryable Failures Only)">
+    For retryable failures, the orchestrator advances to the next candidate. Routing continues until a gateway succeeds, a non-retryable error is returned, the merchant's `maxAttempts` limit is reached, or the `latencyBudgetMs` is exhausted.
+  </Step>
+  <Step title="Async Verification (Timeout Path)">
+    When a timeout occurs, the payment status is set to `PENDING_VERIFICATION`. A background verifier queries the gateway asynchronously to determine the true outcome. Once resolved, the payment transitions to either `SUCCESS` or `FAILED`, and the `verifiedAt` timestamp is set on the payment record.
+  </Step>
+  <Step title="Payment Reaches a Final Status">
+    Every payment eventually lands in `SUCCESS`, `FAILED`, or remains in `PENDING_VERIFICATION` until the verifier completes. Poll `GET /payments/{paymentId}` to check the current status at any time.
+  </Step>
+</Steps>
+
+---
+
+## Payment Statuses
+
+The `status` field on a payment object reflects where the payment currently sits in its lifecycle.
+
+| Status | Description |
+|---|---|
+| `PENDING` | The payment has been created and routing is in progress. |
+| `SUCCESS` | A gateway accepted the payment. The `finalGateway` field identifies which gateway succeeded. |
+| `FAILED` | All gateway attempts were exhausted, or a non-retryable error was returned. No charge was made. |
+| `PENDING_VERIFICATION` | A gateway attempt timed out. The async verifier is working to determine the true outcome. Treat this as in-progress — do not re-submit the payment. |
+
+---
+
+## Attempt Statuses
+
+Each individual gateway attempt is stored separately and has its own status. Retrieve all attempts for a payment with `GET /payments/{paymentId}/attempts`.
+
+| Attempt Status | Description |
+|---|---|
+| `SUCCESS` | The gateway accepted this attempt. The parent payment is marked `SUCCESS`. |
+| `FAILED` | The gateway rejected this attempt. The `errorType` field indicates whether a retry is allowed. |
+| `TIMEOUT` | The gateway did not respond in time. The parent payment moves to `PENDING_VERIFICATION`. |
+
+---
+
+## Error Types
+
+When an attempt has a `FAILED` status, the `errorType` field classifies how the orchestrator should react.
+
+<CardGroup cols={2}>
+  <Card title="RETRYABLE" icon="rotate-right">
+    A transient gateway-side failure. The orchestrator proceeds to the next ranked gateway. Common causes include upstream gateway outages or temporary unavailability.
+  </Card>
+  <Card title="NON_RETRYABLE" icon="ban">
+    A definitive failure that cannot be resolved by trying another gateway — for example, a declined card, invalid instrument, or insufficient funds. Routing stops immediately and the payment is marked `FAILED`.
+  </Card>
+</CardGroup>
+
+<Note>
+  The `TIMEOUT` error type is a third classification used internally. A timeout never triggers a retry on a different gateway; instead it moves the payment to `PENDING_VERIFICATION` so the original attempt can be verified asynchronously before any further action is taken.
+</Note>
+
+---
+
+## The `verifiedAt` Field
+
+When a payment times out and is subsequently resolved by the async verifier, the payment record's `verifiedAt` field is set to the timestamp at which verification completed. A non-null `verifiedAt` value always means the payment's current `SUCCESS` or `FAILED` status was determined by the verifier rather than a real-time gateway response.
+
+```json
+{
+  "id": "a3f1c2d4-...",
+  "status": "SUCCESS",
+  "finalGateway": "razorpay",
+  "verifiedAt": "2024-08-15T10:32:05.123Z",
+  "createdAt": "2024-08-15T10:31:58.000Z"
+}
+```
+
+---
+
+## Rate Limiting
+
+<Warning>
+  `POST /payments` is rate-limited to **100 requests per minute per IP address**. Requests that exceed this limit receive a `429 Too Many Requests` response. Use the `idempotency-key` header to safely retry rejected requests without creating duplicate payments.
+</Warning>
+
+---
+
+## Inspecting a Payment's Routing Decision
+
+Use the routing decision endpoint to see the full scored gateway list, the attempts made, and the reason routing stopped:
+
+```bash
+GET /payments/{paymentId}/routing-decision
+```
+
+Use the attempts endpoint to see each individual gateway interaction in sequence:
+
+```bash
+GET /payments/{paymentId}/attempts
+```
+
+Use the verification status endpoint to check the progress of async verification for a timed-out payment:
+
+```bash
+GET /payments/{paymentId}/status-verification
+```

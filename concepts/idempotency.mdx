@@ -1,0 +1,123 @@
+---
+title: "Idempotency: Prevent Duplicate Payment Charges"
+sidebarTitle: "Idempotency"
+description: "Learn how idempotency keys protect your customers from duplicate charges when you retry a failed or timed-out payment request."
+---
+
+Network errors, timeouts, and unexpected client crashes are inevitable. Without a way to safely retry a `POST /payments` request, each retry risks creating a second payment and charging your customer twice. Idempotency keys solve this: include the same key on every retry for the same payment intention and the gateway returns the original response without creating a new payment.
+
+## How It Works
+
+Every `POST /payments` request **must** include an `idempotency-key` header. The gateway uses this key to look up whether it has already processed an identical request:
+
+- **First request** — no cached result exists. The payment is created and processed normally. The response is stored and associated with the key.
+- **Subsequent requests with the same key** — the gateway detects the cached response and returns it immediately. No new payment is created, no gateway is contacted again.
+
+The cached response is retained for **24 hours** from the time of the first successful request. After that window, submitting the same key creates a new payment as if the key were fresh.
+
+---
+
+## Using Idempotency Keys
+
+Include the `idempotency-key` header on every `POST /payments` call. The key can be up to **128 characters** long.
+
+```bash
+# First request — payment is created and processed
+curl -X POST http://localhost:3000/payments \
+  -H "Content-Type: application/json" \
+  -H "idempotency-key: order-12345" \
+  -d '{
+    "merchantId": "amazon",
+    "customerId": "cust_001",
+    "amountMinor": 33000,
+    "paymentMethod": "UPI",
+    "instrument": { "vpa": "user@paytm", "bank": "HDFC" }
+  }'
+
+# Retry after a network error — safe to send again
+curl -X POST http://localhost:3000/payments \
+  -H "Content-Type: application/json" \
+  -H "idempotency-key: order-12345" \
+  -d '{
+    "merchantId": "amazon",
+    "customerId": "cust_001",
+    "amountMinor": 33000,
+    "paymentMethod": "UPI",
+    "instrument": { "vpa": "user@paytm", "bank": "HDFC" }
+  }'
+# Returns the exact same response as the first request — no duplicate payment created
+```
+
+<Tip>
+  Use your internal order ID or transaction ID as the idempotency key. It is already unique per payment intention in your system, it is easy to reconstruct when retrying, and it gives you a natural audit trail linking your order records to gateway payment records.
+</Tip>
+
+---
+
+## Key-Body Binding
+
+The idempotency key is cryptographically bound to the request body using a SHA-256 hash. If you submit the same key with a **different request body**, the gateway rejects the request with a `409 Conflict` error.
+
+<Warning>
+  Never reuse an idempotency key for a different payment. If you need to create a new payment — even for the same customer and amount — generate a new unique key. Reusing a key with a different body is always rejected and will never create the new payment you intend.
+</Warning>
+
+---
+
+## Concurrent Request Protection
+
+If two requests with the same idempotency key arrive simultaneously, the gateway uses a short-lived in-flight lock to ensure only one is processed. The second concurrent request receives a `409 Conflict` response with the message `A request with this idempotency-key is already in progress`. Retry the second request once the first has completed.
+
+---
+
+## What Happens Without an Idempotency Key
+
+The `idempotency-key` header is **required** on every `POST /payments` request. Omitting it returns a `400 Bad Request` error immediately — no payment is created.
+
+Beyond the validation error, consider what would happen if the header were optional and you omitted it on a retry:
+
+<CardGroup cols={2}>
+  <Card title="With an Idempotency Key" icon="shield-check">
+    A network failure causes your client to retry. The gateway recognises the key, returns the original response, and your customer is charged exactly once.
+  </Card>
+  <Card title="Without an Idempotency Key" icon="triangle-exclamation">
+    A network failure causes your client to retry. The gateway treats the retry as a brand-new payment, creates it, and your customer is charged twice.
+  </Card>
+</CardGroup>
+
+---
+
+## Choosing a Good Idempotency Key
+
+<Accordion title="Use UUIDs generated at order creation time">
+  Generate a UUID when your order is created and persist it alongside the order. Use that UUID as the idempotency key for every payment attempt tied to that order. This ensures uniqueness without requiring a second lookup.
+
+  ```javascript
+  const idempotencyKey = crypto.randomUUID(); // generate once, store with order
+  ```
+</Accordion>
+
+<Accordion title="Use your internal order or transaction ID">
+  If your system already assigns unique IDs to orders or transactions, use them directly. They are unique by construction and easy to retrieve when building a retry.
+
+  ```bash
+  -H "idempotency-key: txn_9f3a2c1b"
+  ```
+</Accordion>
+
+<Accordion title="Avoid time-based or sequential keys">
+  Keys like `payment-1`, `payment-2`, or timestamp-based strings are risky. Sequential IDs can collide across distributed clients; timestamps can repeat under high concurrency. Prefer UUID v4 or your own system-assigned unique identifiers.
+</Accordion>
+
+---
+
+## Summary
+
+| Scenario | Behaviour |
+|---|---|
+| First request with a new key | Payment is created and processed normally. |
+| Retry with the same key and same body | Cached response is returned immediately. No new payment is created. |
+| Same key, different body | `409 Conflict` — request is rejected. |
+| Concurrent requests with the same key | Second request gets `409 Conflict` (in-flight lock). Retry after the first completes. |
+| Missing `idempotency-key` header | `400 Bad Request` — no payment is created. |
+| Key older than 24 hours | Treated as a new key; a fresh payment is created. |

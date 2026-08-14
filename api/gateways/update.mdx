@@ -1,0 +1,119 @@
+---
+title: "PATCH /gateways/{gatewayName} — Update Gateway Config"
+sidebarTitle: "PATCH /gateways/:name"
+description: "Update a payment gateway's simulator configuration — override success rate, latency, enabled state, or affinity maps. Requires the internal API key."
+---
+
+The `PATCH /gateways/{gatewayName}` endpoint lets you partially update the simulator configuration for a named payment gateway. You can use it to inject failure scenarios (e.g., drop a gateway's success rate to 10 % to test failover), adjust latency baselines, or toggle a gateway on and off — all without restarting the service. Only the fields you include in the request body are changed; omitted fields retain their current values.
+
+<Warning>
+  This endpoint requires the `X-Internal-Api-Key` header. Requests that omit the header or supply an invalid key receive a `401 Unauthorized` response. Do not expose this key in client-side code or public repositories.
+</Warning>
+
+## Endpoint
+
+```
+PATCH http://localhost:3000/gateways/{gatewayName}
+```
+
+## Path Parameters
+
+<ParamField path="gatewayName" type="string" required>
+  The internal name of the gateway to update (e.g., `razorpay`, `cashfree`, `payu`, `juspay`, `hdfc_gateway`).
+</ParamField>
+
+## Request Body
+
+All body fields are optional. Send only the fields you want to change.
+
+<ParamField body="successRate" type="number">
+  Override the gateway's baseline success rate. Must be a decimal between `0` and `1` inclusive. Setting this to a low value (e.g., `0.10`) simulates a degraded gateway and forces the orchestrator to route around it.
+</ParamField>
+
+<ParamField body="baseLatencyMs" type="integer">
+  Override the baseline p50 latency in milliseconds. Must be a positive integer (`>= 1`). Higher values cause the latency scoring factor to penalise this gateway.
+</ParamField>
+
+<ParamField body="enabled" type="boolean">
+  Enable (`true`) or disable (`false`) the gateway. A disabled gateway is excluded from all routing decisions immediately, without touching its circuit-breaker state.
+</ParamField>
+
+<ParamField body="methodAffinity" type="object">
+  Replace the per-method scoring multiplier map. Keys are method names (`UPI`, `CARD`, `NETBANKING`, `WALLET`); values are numeric multipliers. The entire object is replaced — partial merging is not performed.
+</ParamField>
+
+<ParamField body="bankAffinity" type="object">
+  Replace the per-bank scoring multiplier map. Keys are uppercased bank names; values are numeric multipliers. The entire object is replaced.
+</ParamField>
+
+<ParamField body="amountTiers" type="object">
+  Replace the amount-tier scoring multiplier map. The entire object is replaced.
+</ParamField>
+
+<ParamField body="timePenalties" type="object">
+  Replace the hour-of-day penalty map. Keys are hour strings (24-hour UTC); values are penalty multipliers. The entire object is replaced.
+</ParamField>
+
+## Example Request
+
+The following example drops Razorpay's success rate to 10 % to simulate a major outage and test gateway failover:
+
+```bash
+curl -X PATCH http://localhost:3000/gateways/razorpay \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Api-Key: your-api-key" \
+  -d '{ "successRate": 0.10 }'
+```
+
+To restore it after your test:
+
+```bash
+curl -X PATCH http://localhost:3000/gateways/razorpay \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Api-Key: your-api-key" \
+  -d '{ "successRate": 0.87 }'
+```
+
+## Response
+
+On success the endpoint returns the complete, updated gateway object.
+
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "razorpay",
+  "displayName": "Razorpay",
+  "successRate": 0.10,
+  "baseLatencyMs": 320,
+  "supportedMethods": ["UPI", "CARD", "NETBANKING", "WALLET"],
+  "methodAffinity": {
+    "UPI": 1.2,
+    "CARD": 1.0,
+    "NETBANKING": 0.95,
+    "WALLET": 1.05
+  },
+  "bankAffinity": {
+    "HDFC": 1.15,
+    "ICICI": 1.05,
+    "SBI": 0.9
+  },
+  "amountTiers": {
+    "small": 1.1,
+    "medium": 1.0,
+    "large": 0.95
+  },
+  "timePenalties": {
+    "2": 0.8,
+    "3": 0.75
+  },
+  "enabled": true
+}
+```
+
+## Error Responses
+
+| Status | Description |
+|--------|-------------|
+| `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or contains an invalid key. |
+| `404 Not Found` | No gateway with the given name exists. |
+| `400 Bad Request` | One or more body fields failed validation (e.g., `successRate` outside `[0, 1]`). |

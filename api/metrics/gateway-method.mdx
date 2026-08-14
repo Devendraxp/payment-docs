@@ -1,0 +1,134 @@
+---
+title: "GET /metrics/gateways/{name}/{method} — Method Metrics"
+sidebarTitle: "GET /metrics/:name/:method"
+description: "Retrieve rolling hot metrics for a specific gateway, optionally filtered to a single payment method like UPI, CARD, NETBANKING, or WALLET."
+---
+
+The metrics service exposes two scoped endpoints that let you drill into the performance of a single gateway. You can either fetch metrics for all payment methods on a gateway at once, or narrow your request to a specific method such as `UPI` or `CARD`. Both endpoints read from Redis hot-metric hashes and return the same rolling window statistics as the all-gateways endpoint, just scoped to the resource you specify. No authentication is required.
+
+## Endpoints
+
+| Variant | URL |
+|---|---|
+| All methods for a gateway | `GET http://localhost:3001/metrics/gateways/{gatewayName}` |
+| Single method for a gateway | `GET http://localhost:3001/metrics/gateways/{gatewayName}/{method}` |
+
+## Path Parameters
+
+<ParamField path="gatewayName" type="string" required>
+  The gateway identifier, lowercase. Examples: `razorpay`, `cashfree`, `payu`, `juspay`.
+</ParamField>
+
+<ParamField path="method" type="string">
+  The payment method to filter by. The value is case-insensitive — the service normalises it to uppercase internally. Supported values: `UPI`, `CARD`, `NETBANKING`, `WALLET`. Omit this parameter to retrieve metrics for all methods on the gateway.
+</ParamField>
+
+## Example Requests
+
+**All methods for a gateway:**
+
+```bash
+curl http://localhost:3001/metrics/gateways/cashfree
+```
+
+**Single method for a gateway:**
+
+```bash
+curl http://localhost:3001/metrics/gateways/razorpay/UPI
+```
+
+## Response Fields
+
+### All-methods response (`/metrics/gateways/{gatewayName}`)
+
+<ResponseField name="gateway" type="string">
+  The gateway name as provided in the path parameter.
+</ResponseField>
+
+<ResponseField name="methods" type="object">
+  A map of payment method names to their metric objects (same structure as the single-method `metrics` field below).
+</ResponseField>
+
+### Single-method response (`/metrics/gateways/{gatewayName}/{method}`)
+
+<ResponseField name="gateway" type="string">
+  The gateway name as provided in the path parameter.
+</ResponseField>
+
+<ResponseField name="method" type="string">
+  The uppercased payment method name.
+</ResponseField>
+
+<ResponseField name="metrics" type="object">
+  The hot metric hash for this gateway + method combination.
+
+  <Expandable title="metrics fields">
+    <ResponseField name="success_rate_5m" type="number">
+      Rolling success rate over the last 5 minutes, as a value between `0` and `1`.
+    </ResponseField>
+
+    <ResponseField name="p95_5m" type="number">
+      95th-percentile latency in milliseconds over the 5-minute window.
+    </ResponseField>
+
+    <ResponseField name="attempts_5m" type="integer">
+      Total payment attempts in the last 5-minute window.
+    </ResponseField>
+
+    <ResponseField name="last_updated" type="string">
+      ISO 8601 timestamp of the last time this metric hash was refreshed.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Responses
+
+**All methods for cashfree:**
+
+```json
+{
+  "gateway": "cashfree",
+  "methods": {
+    "UPI": {
+      "success_rate_5m": "0.9615",
+      "p95_5m": "285",
+      "attempts_5m": "130",
+      "success_rate_1m": "0.9700",
+      "p95_1m": "270",
+      "attempts_1m": "44",
+      "last_updated": "2024-11-15T10:23:46.789Z"
+    },
+    "NETBANKING": {
+      "success_rate_5m": "0.9100",
+      "p95_5m": "870",
+      "attempts_5m": "41",
+      "last_updated": "2024-11-15T10:23:40.555Z"
+    }
+  }
+}
+```
+
+**Single method — razorpay UPI:**
+
+```json
+{
+  "gateway": "razorpay",
+  "method": "UPI",
+  "metrics": {
+    "success_rate_5m": "0.9732",
+    "p95_5m": "312",
+    "attempts_5m": "149",
+    "success_rate_1m": "0.9800",
+    "p95_1m": "298",
+    "attempts_1m": "50",
+    "success_rate_15m": "0.9650",
+    "p95_15m": "340",
+    "attempts_15m": "420",
+    "last_updated": "2024-11-15T10:23:45.123Z"
+  }
+}
+```
+
+<Tip>
+  The routing engine's scoring algorithm reads these exact metrics in real time when it decides which gateway to try first. A higher `success_rate_5m` and a lower `p95_5m` both contribute to a higher routing score, meaning a gateway with consistently fast, successful responses will be preferred over one with degraded metrics — even if only briefly.
+</Tip>

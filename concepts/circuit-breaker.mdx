@@ -1,0 +1,157 @@
+---
+title: "Circuit Breaker: Automatic Gateway Health Protection"
+sidebarTitle: "Circuit Breaker"
+description: "Learn how the circuit breaker automatically detects unhealthy gateways, removes them from routing, and restores them once they recover."
+---
+
+When a payment gateway starts failing at an elevated rate, continuing to route traffic to it wastes time and degrades the customer experience. The circuit breaker solves this automatically: it tracks failure patterns per gateway and payment method pair, removes unhealthy gateways from the routing candidate list, and re-admits them only after they demonstrate recovery. You don't need to configure anything to benefit from it — it operates continuously in the background.
+
+## Circuit State Per Gateway-Method Pair
+
+The circuit breaker maintains independent state for every `{gatewayName}:{paymentMethod}` combination — for example, `razorpay:UPI` and `razorpay:CARD` are tracked separately. This precision means a problem with card processing on one gateway doesn't block UPI traffic on the same gateway.
+
+---
+
+## The Three States
+
+<CardGroup cols={3}>
+  <Card title="CLOSED" icon="circle-check">
+    The gateway is healthy. All routing attempts flow through normally. This is the default state for every gateway-method pair.
+  </Card>
+  <Card title="OPEN" icon="circle-xmark">
+    The gateway is unhealthy. All routing attempts for this pair are blocked. The circuit opens automatically when the failure threshold is breached.
+  </Card>
+  <Card title="HALF_OPEN" icon="circle-half-stroke">
+    The gateway is in recovery. A small fraction of probe traffic (10%) is allowed through to test whether the gateway has recovered. Full traffic resumes only after enough consecutive probes succeed.
+  </Card>
+</CardGroup>
+
+---
+
+## State Transitions
+
+<Steps>
+  <Step title="CLOSED → OPEN (Failure Threshold Breached)">
+    The circuit opens when any of the following is true for a gateway-method pair:
+    - A **timeout** is recorded on that pair.
+    - The **consecutive failure count** reaches 5.
+    - Over a rolling window of at least 10 requests, the **failure rate** exceeds 60%.
+  </Step>
+  <Step title="OPEN → HALF_OPEN (Recovery Timeout Elapsed)">
+    After the circuit has been open for **30 seconds**, the next routing request transitions the pair to `HALF_OPEN`. Only 10% of traffic is let through as probe requests during this window.
+  </Step>
+  <Step title="HALF_OPEN → CLOSED (Probe Succeeds)">
+    If **3 consecutive probe requests** succeed, the circuit closes and the gateway-method pair is fully restored to normal routing.
+  </Step>
+  <Step title="HALF_OPEN → OPEN (Probe Fails)">
+    If any probe request fails while the circuit is `HALF_OPEN`, the circuit immediately returns to `OPEN` and the 30-second recovery timer resets.
+  </Step>
+</Steps>
+
+---
+
+## The CircuitBreakerState Object
+
+Every gateway-method pair exposes the following fields when you query the status endpoint:
+
+| Field | Type | Description |
+|---|---|---|
+| `state` | `CLOSED \| OPEN \| HALF_OPEN` | The current circuit state. |
+| `failureCount` | number | The number of consecutive failures recorded since the last success. Resets to 0 on any success. |
+| `lastFailureTs` | number | Unix timestamp (ms) of the most recent failure. Used to calculate when the recovery timeout has elapsed. |
+| `probeCount` | number | The number of successful probe requests recorded while in `HALF_OPEN`. Resets when the circuit opens or closes. |
+| `recentSuccesses` | number | Count of successes within the rolling window (capped at 10). |
+| `recentAttempts` | number | Count of total attempts within the rolling window (capped at 10). |
+
+---
+
+## Checking Circuit Breaker Status
+
+Retrieve the live state for all tracked gateway-method pairs at any time:
+
+```bash
+GET /circuit-breaker/status
+```
+
+Example response:
+
+```json
+{
+  "circuit_breaker:razorpay:UPI": {
+    "state": "OPEN",
+    "failureCount": 5,
+    "lastFailureTs": 1723712400000,
+    "probeCount": 0,
+    "recentSuccesses": 2,
+    "recentAttempts": 10
+  },
+  "circuit_breaker:cashfree:UPI": {
+    "state": "CLOSED",
+    "failureCount": 0,
+    "lastFailureTs": 0,
+    "probeCount": 0,
+    "recentSuccesses": 9,
+    "recentAttempts": 10
+  },
+  "circuit_breaker:razorpay:CARD": {
+    "state": "HALF_OPEN",
+    "failureCount": 0,
+    "lastFailureTs": 1723712380000,
+    "probeCount": 1,
+    "recentSuccesses": 1,
+    "recentAttempts": 2
+  }
+}
+```
+
+---
+
+## Forcing State Changes
+
+You can manually override a gateway-method circuit state using the admin endpoints. This is useful for emergency traffic management and integration testing.
+
+<Warning>
+  Both force endpoints require the `X-Internal-Api-Key` header. Requests without a valid key are rejected. Do not expose this header or key in client-side code.
+</Warning>
+
+**Force a gateway-method pair open (mark unhealthy):**
+
+```bash
+POST /circuit-breaker/force-open/{gatewayName}/{method}
+```
+
+```bash
+curl -X POST http://localhost:3000/circuit-breaker/force-open/razorpay/UPI \
+  -H "X-Internal-Api-Key: <your-internal-api-key>"
+```
+
+**Force a gateway-method pair closed (mark healthy):**
+
+```bash
+POST /circuit-breaker/force-close/{gatewayName}/{method}
+```
+
+```bash
+curl -X POST http://localhost:3000/circuit-breaker/force-close/razorpay/UPI \
+  -H "X-Internal-Api-Key: <your-internal-api-key>"
+```
+
+<Tip>
+  Use `force-open` in your staging environment to artificially trip a gateway's circuit and verify that your integration correctly handles failover to the next ranked gateway. Confirm that `GET /payments/{paymentId}/attempts` shows the expected fallback behaviour before releasing to production.
+</Tip>
+
+---
+
+## Frequently Asked Questions
+
+<Accordion title="Does the circuit breaker affect all merchants equally?">
+  Yes. Circuit breaker state is global per gateway-method pair and affects all merchants routing through that combination. This ensures that a degraded gateway is taken out of rotation for everyone, not just the merchant whose traffic detected the failure first.
+</Accordion>
+
+<Accordion title="What happens to a payment when every gateway is circuit-broken?">
+  If all gateways for a given payment method have open circuits, the routing service returns no routeable candidates and the payment immediately transitions to `FAILED` with reason `No routeable gateways available`.
+</Accordion>
+
+<Accordion title="Where is circuit breaker state stored?">
+  Circuit breaker state is stored in Redis, so it is shared across all orchestrator instances and survives individual process restarts. State is lost only if Redis itself is flushed.
+</Accordion>

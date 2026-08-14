@@ -1,0 +1,138 @@
+---
+title: "GET /scoring/debug — Inspect Gateway Rankings"
+sidebarTitle: "GET /scoring/debug"
+description: "Inspect how the scoring engine ranks payment gateways for a given method, amount, and bank context — useful for tuning affinity weights and debugging routing decisions."
+---
+
+The `GET /scoring/debug` endpoint runs the full scoring pipeline against a synthetic payment context you supply via query parameters and returns each eligible gateway along with its composite score and a factor-by-factor breakdown. You can use this endpoint to understand exactly why a specific gateway is ranked first, to verify that an affinity change had the intended effect, or to reproduce a routing decision from your logs. No authentication is required.
+
+<Tip>
+  The scoring engine pulls live hot metrics (5-minute rolling success rate and p95 latency) from Redis when computing `successScore` and `latencyScore`. The rankings you see here reflect the gateway's **current health**, not just its static baseline configuration. Run the endpoint again after a few minutes to see how scores shift as recent traffic data rolls off.
+</Tip>
+
+## Endpoint
+
+```
+GET http://localhost:3000/scoring/debug
+```
+
+## Query Parameters
+
+<ParamField query="method" type="string" required>
+  The payment method to score for. Must be one of `UPI`, `CARD`, `NETBANKING`, or `WALLET`. Gateways that do not support the requested method are excluded from the results.
+</ParamField>
+
+<ParamField query="amountMinor" type="integer" required>
+  The transaction amount in the **smallest currency unit** (e.g., paise for INR). Must be a positive integer. For example, pass `33000` for ₹330.00. This value determines which amount tier multiplier is applied.
+</ParamField>
+
+<ParamField query="bank" type="string">
+  The customer's bank name for bank-affinity scoring (e.g., `HDFC`, `ICICI`, `SBI`, `AXIS`). The value is trimmed and uppercased automatically. When omitted, the bank-affinity factor is not applied.
+</ParamField>
+
+## Example Request
+
+```bash
+curl "http://localhost:3000/scoring/debug?method=UPI&bank=HDFC&amountMinor=33000"
+```
+
+## Scoring Weights
+
+The composite score is the weighted sum of six individual factors:
+
+| Factor | Field | Weight |
+|--------|-------|--------|
+| Recent success rate | `successScore` | 35 % |
+| Response latency | `latencyScore` | 25 % |
+| Method affinity | `methodScore` | 15 % |
+| Bank affinity | `bankScore` | 12 % |
+| Amount tier fit | `amountScore` | 8 % |
+| Time-of-day penalty | `timeScore` | 5 % |
+
+## Response
+
+<ResponseField name="context" type="object" required>
+  The payment context used for scoring, echoed back so you can confirm the inputs.
+
+  <Expandable title="context fields">
+    <ResponseField name="paymentMethod" type="string">Payment method passed in the query.</ResponseField>
+    <ResponseField name="amountMinor" type="integer">Amount passed in the query.</ResponseField>
+    <ResponseField name="bank" type="string | null">Uppercased bank name, or `null` if not supplied.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="rankedGateways" type="array" required>
+  Gateways ranked from highest to lowest score. Only enabled gateways that support the requested method are included.
+
+  <Expandable title="rankedGateways item fields">
+    <ResponseField name="gatewayName" type="string">Internal gateway name (e.g., `"razorpay"`).</ResponseField>
+    <ResponseField name="displayName" type="string">Human-readable gateway name.</ResponseField>
+    <ResponseField name="score" type="number">Composite score (weighted sum of all factors). Higher is better.</ResponseField>
+    <ResponseField name="factors" type="object">
+      Individual factor scores that make up the composite.
+
+      <Expandable title="factors fields">
+        <ResponseField name="successScore" type="number">Score contribution from the gateway's recent success rate (35 % weight).</ResponseField>
+        <ResponseField name="latencyScore" type="number">Score contribution from the gateway's recent p95 latency (25 % weight).</ResponseField>
+        <ResponseField name="methodScore" type="number">Score contribution from the gateway's method-affinity multiplier for the requested method (15 % weight).</ResponseField>
+        <ResponseField name="bankScore" type="number">Score contribution from the gateway's bank-affinity multiplier for the supplied bank (12 % weight).</ResponseField>
+        <ResponseField name="amountScore" type="number">Score contribution from the gateway's amount-tier multiplier for the transaction size (8 % weight).</ResponseField>
+        <ResponseField name="timeScore" type="number">Score contribution after applying the time-of-day penalty for the current UTC hour (5 % weight).</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Response
+
+```json
+{
+  "context": {
+    "paymentId": "debug",
+    "merchantId": "debug",
+    "customerId": "debug",
+    "paymentMethod": "UPI",
+    "amountMinor": 33000,
+    "instrument": {},
+    "bank": "HDFC",
+    "experimentId": null,
+    "variant": null,
+    "treatmentConfig": null,
+    "banditUsed": false
+  },
+  "rankedGateways": [
+    {
+      "gatewayName": "razorpay",
+      "displayName": "Razorpay",
+      "score": 0.8741,
+      "factors": {
+        "successScore": 0.87,
+        "latencyScore": 0.81,
+        "methodScore": 1.2,
+        "bankScore": 1.15,
+        "amountScore": 1.1,
+        "timeScore": 1.0
+      }
+    },
+    {
+      "gatewayName": "cashfree",
+      "displayName": "Cashfree",
+      "score": 0.7623,
+      "factors": {
+        "successScore": 0.83,
+        "latencyScore": 0.74,
+        "methodScore": 1.1,
+        "bankScore": 1.0,
+        "amountScore": 1.0,
+        "timeScore": 1.0
+      }
+    }
+  ]
+}
+```
+
+## Error Responses
+
+| Status | Description |
+|--------|-------------|
+| `400 Bad Request` | `method` is not one of the accepted values, or `amountMinor` is not a positive integer. |

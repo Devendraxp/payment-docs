@@ -1,0 +1,85 @@
+---
+title: "GET /experiments/assign — Assign Customer to Variant"
+sidebarTitle: "GET /assign"
+description: "Deterministically assign a customer to a control or treatment variant for the active experiment matching their payment method and optional segment."
+---
+
+The `/experiments/assign` endpoint resolves which experiment variant — `CONTROL` or `TREATMENT` — a specific customer belongs to for a given payment method. The assignment is deterministic: the same combination of `customerId` and `method` always produces the same variant, so a customer's routing behaviour is consistent across every payment attempt for the duration of the experiment. This is the endpoint the payment orchestrator calls internally before making a routing decision. No authentication is required.
+
+## Endpoint
+
+```
+GET http://localhost:3002/experiments/assign
+```
+
+## Query Parameters
+
+<ParamField query="customerId" type="string" required>
+  The unique identifier for the customer whose variant assignment you want to look up. This is typically your internal customer ID (e.g., `cust_001`). The assignment algorithm uses this value to deterministically bucket the customer.
+</ParamField>
+
+<ParamField query="method" type="string">
+  The payment method to match against active experiments. Defaults to `"UPI"` if not provided. Supported values: `UPI`, `CARD`, `NETBANKING`, `WALLET`. The service finds the active experiment whose `targetMethods` includes this value.
+</ParamField>
+
+<ParamField query="segment" type="string">
+  An optional additional segment qualifier that can further narrow which experiment applies. If provided, it is passed alongside `customerId` and `method` during experiment matching.
+</ParamField>
+
+## Example Request
+
+```bash
+curl "http://localhost:3002/experiments/assign?customerId=cust_001&method=UPI"
+```
+
+## Response Fields
+
+<ResponseField name="experimentId" type="string (UUID) | null">
+  The ID of the active experiment the customer has been assigned to, or `null` if there is no active experiment matching the specified method.
+</ResponseField>
+
+<ResponseField name="variant" type="string | null">
+  The variant assigned to this customer. Either `"CONTROL"` (uses default routing), `"TREATMENT"` (uses the `treatmentConfig` routing override), or `null` if no experiment is active.
+</ResponseField>
+
+<ResponseField name="treatmentConfig" type="object | null">
+  When `variant` is `"TREATMENT"`, this contains the full treatment configuration object for the matched experiment — including the `gatewayOrderOverride` array the orchestrator should use for routing. Returns `null` for `CONTROL` assignments or when no experiment is active.
+</ResponseField>
+
+## Example Responses
+
+**Customer assigned to treatment:**
+
+```json
+{
+  "experimentId": "e1a2b3c4-d5e6-7f89-ab01-cd23ef456789",
+  "variant": "TREATMENT",
+  "treatmentConfig": {
+    "gatewayOrderOverride": ["cashfree", "razorpay", "payu", "juspay"]
+  }
+}
+```
+
+**Customer assigned to control:**
+
+```json
+{
+  "experimentId": "e1a2b3c4-d5e6-7f89-ab01-cd23ef456789",
+  "variant": "CONTROL",
+  "treatmentConfig": null
+}
+```
+
+**No active experiment for the specified method:**
+
+```json
+{
+  "experimentId": null,
+  "variant": null,
+  "treatmentConfig": null
+}
+```
+
+<Note>
+  Variant assignment is **deterministic and sticky**. The same `customerId` and `method` combination will always resolve to the same variant for the lifetime of an experiment. This ensures a consistent payment experience — a customer who is in the treatment group on their first payment will remain in the treatment group on subsequent payments, preventing variant flip-flopping that would pollute your experiment results.
+</Note>

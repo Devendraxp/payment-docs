@@ -1,0 +1,101 @@
+---
+title: "Payment Gateway: Intelligent Multi-Gateway Payment API"
+sidebarTitle: "Introduction"
+description: "Payment Gateway is a smart payment aggregator API that routes transactions across multiple gateways using real-time scoring, circuit breaking, and idempotency."
+---
+
+Payment Gateway is a payment aggregation API that sits between your application and the underlying payment processors. Instead of integrating with a single gateway, you send one payment request and the system automatically selects the best-performing gateway in real time — maximising success rates, minimising latency, and transparently retrying across providers when a gateway fails.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Make your first payment request in under five minutes.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/authentication">
+    Learn which endpoints are public and how to pass an internal API key.
+  </Card>
+  <Card title="Core Concepts" icon="book-open" href="/concepts/payment-lifecycle">
+    Understand smart routing, circuit breaking, idempotency, and experiments.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/payments/create">
+    Explore every endpoint, request body, and response shape.
+  </Card>
+</CardGroup>
+
+## Supported Gateways
+
+Payment Gateway routes traffic across five payment processors. The routing engine scores each gateway in real time and selects the highest-scoring healthy candidate for every transaction.
+
+| Gateway | Identifier |
+|---|---|
+| Razorpay | `razorpay` |
+| Cashfree | `cashfree` |
+| PayU | `payu` |
+| Juspay | `juspay` |
+| HDFC Gateway | `hdfc_gateway` |
+
+## Smart Routing
+
+Every payment request triggers a scoring pass across all available gateways. The routing engine combines the following weighted signals to produce a ranked list:
+
+| Signal | Weight |
+|---|---|
+| Success rate | 35% |
+| Latency | 25% |
+| Payment method affinity | 15% |
+| Bank affinity | 12% |
+| Amount fit | 8% |
+| Time of day | 5% |
+
+The top-ranked healthy gateway processes the payment first. If it fails, the retry policy kicks in and the next-best gateway is tried — all within a single API call from your perspective.
+
+<Tip>
+  Use `GET /scoring/debug` to inspect how gateways are scored for any given payment context without creating a live transaction.
+</Tip>
+
+## Supported Payment Methods
+
+Payment Gateway supports the following payment methods. Pass the identifier string in the `paymentMethod` field of your payment request.
+
+| Method | Identifier |
+|---|---|
+| Unified Payments Interface | `UPI` |
+| Credit / Debit Card | `CARD` |
+| Net Banking | `NETBANKING` |
+| Wallet | `WALLET` |
+
+## Payment Statuses
+
+After creating a payment you can track its progress through the following lifecycle states:
+
+| Status | Meaning |
+|---|---|
+| `PENDING` | The payment has been accepted and routing is in progress. |
+| `SUCCESS` | At least one gateway attempt succeeded. |
+| `FAILED` | All gateway attempts were exhausted without a successful response. |
+| `PENDING_VERIFICATION` | A gateway timed out; the outcome is being verified asynchronously. |
+
+## Key Capabilities
+
+**Circuit Breaking** — Each gateway-method pair is individually monitored. A route that breaches the failure threshold is automatically opened (taken offline) to prevent further attempts, then probed at regular intervals for recovery.
+
+**Idempotency** — Every `POST /payments` request requires an `idempotency-key` header. Duplicate requests carrying the same key and body return the cached response; requests with the same key but a different body are rejected with `409 Conflict`. Idempotency records are stored for 24 hours.
+
+**Retry Policies** — You can configure per-merchant retry budgets including maximum attempts, total latency budgets, and whether to retry on timeout. The orchestrator respects these limits on every payment.
+
+**A/B Experiments** — Run gateway-order experiments across customer segments. Assign customers to control or treatment arms and measure the impact on success rate and latency.
+
+**Thompson Sampling Bandit** — A multi-armed bandit continuously learns the best gateway ordering per payment-method segment, balancing exploration and exploitation without requiring manual experiment management.
+
+## Service Endpoints
+
+Payment Gateway exposes three independent services, each on its own port.
+
+| Service | Base URL | Purpose |
+|---|---|---|
+| Payment Orchestrator | `http://localhost:3000` | Payment creation, routing, gateway admin, circuit breaker, retry policies |
+| Metrics Service | `http://localhost:3001` | Real-time and historical gateway performance metrics |
+| Experiment Service | `http://localhost:3002` | A/B experiments, bandit state, assignment |
+
+## Rate Limits
+
+`POST /payments` is throttled at **100 requests per minute per IP address**. Requests that exceed this limit receive an HTTP `429 Too Many Requests` response. All other endpoints are not rate-limited.

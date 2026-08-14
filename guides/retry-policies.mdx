@@ -1,0 +1,115 @@
+---
+title: "Configure Retry Policies for Your Merchant Account"
+sidebarTitle: "Retry Policies"
+description: "Set per-merchant retry policies to control gateway attempt limits, total latency budgets, and timeout retry behaviour for your payments."
+---
+
+When a gateway attempt fails, the Payment Gateway can automatically retry on the next ranked gateway — but you control exactly how far that goes. Retry policies let you set a hard limit on the number of attempts, a total time budget across all attempts, and whether a gateway timeout should itself trigger a retry. Policies are configured per merchant, so different merchants can have different risk and latency tolerances.
+
+## Policy Fields
+
+<ParamField body="maxAttempts" type="integer">
+  The maximum number of gateway attempts allowed for a single payment. Must be ≥ 1. Once this count is reached, routing stops and the payment is marked `FAILED` regardless of remaining latency budget.
+</ParamField>
+
+<ParamField body="latencyBudgetMs" type="integer">
+  Total milliseconds allowed across all gateway attempts before routing stops. Must be ≥ 100. If the cumulative time spent on attempts reaches this threshold, no further retries are made even if `maxAttempts` has not been reached.
+</ParamField>
+
+<ParamField body="retryOnTimeout" type="boolean">
+  When `true`, a gateway timeout counts as a retryable error and triggers an attempt on the next gateway. When `false`, a timeout terminates routing immediately.
+</ParamField>
+
+<ParamField body="enabled" type="boolean">
+  When `false`, the policy is ignored and system defaults are used. Defaults to `true`.
+</ParamField>
+
+<Warning>
+  All retry policy endpoints require the `X-Internal-Api-Key` request header. Calls without a valid key will receive a `401 Unauthorized` response.
+</Warning>
+
+## Get the Current Policy
+
+Retrieve the active retry policy for a merchant:
+
+```bash
+curl http://localhost:3000/retry-policy/amazon \
+  -H "X-Internal-Api-Key: your-api-key"
+```
+
+```json
+{
+  "id": "d290f1ee-...",
+  "merchantId": "amazon",
+  "maxAttempts": 3,
+  "latencyBudgetMs": 10000,
+  "retryOnTimeout": true,
+  "enabled": true,
+  "createdAt": "2024-01-10T08:00:00.000Z",
+  "updatedAt": "2024-01-14T12:00:00.000Z"
+}
+```
+
+## Create or Update a Policy
+
+Use `PUT /retry-policy/{merchantId}` to create or replace the policy for a merchant. All fields are optional in the request body — omitting a field preserves its current value if a policy already exists.
+
+**Example — setting a conservative policy:**
+
+```bash
+curl -X PUT http://localhost:3000/retry-policy/amazon \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Api-Key: your-api-key" \
+  -d '{
+    "maxAttempts": 3,
+    "latencyBudgetMs": 10000,
+    "retryOnTimeout": true
+  }'
+```
+
+**Example — disabling retries entirely:**
+
+```bash
+curl -X PUT http://localhost:3000/retry-policy/amazon \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Api-Key: your-api-key" \
+  -d '{
+    "maxAttempts": 1,
+    "retryOnTimeout": false
+  }'
+```
+
+## How Retry Logic Works
+
+<Steps>
+  <Step title="Payment attempt is made on the top-ranked gateway">
+    The routing engine picks the highest-scoring gateway and sends the payment.
+  </Step>
+  <Step title="Outcome is evaluated">
+    If the attempt succeeds, routing stops and the payment is marked `SUCCESS`.
+
+    If it fails, the error type determines what happens next:
+    - **`RETRYABLE`** errors proceed to the next step.
+    - **`NON_RETRYABLE`** errors (for example, a card decline) stop routing immediately and mark the payment `FAILED`, regardless of remaining `maxAttempts` or latency budget.
+    - **`TIMEOUT`** errors are treated as retryable only when `retryOnTimeout` is `true`.
+  </Step>
+  <Step title="Budget is checked">
+    Before attempting the next gateway, the system checks whether the cumulative attempt count is below `maxAttempts` and the total elapsed time is below `latencyBudgetMs`. If either limit is exceeded, routing stops.
+  </Step>
+  <Step title="Next gateway is attempted">
+    The next ranked gateway receives the payment and the cycle repeats from step 2.
+  </Step>
+</Steps>
+
+<Tip>
+  Setting a high `maxAttempts` with a tight `latencyBudgetMs` may prevent later attempts from executing — if the first few gateways are slow, the budget can be exhausted before all allowed attempts are made. As a rule of thumb, set `latencyBudgetMs` to at least `maxAttempts × (expected p95 gateway latency)`. For example, if your gateways have a p95 of 3 000 ms, a `maxAttempts` of 3 needs at least `9000` ms of budget.
+</Tip>
+
+## List All Policies
+
+To view the policies for all merchants:
+
+```bash
+curl http://localhost:3000/retry-policy \
+  -H "X-Internal-Api-Key: your-api-key"
+```

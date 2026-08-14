@@ -1,0 +1,129 @@
+---
+title: "GET /payments/{paymentId}/attempts — List Gateway Attempts"
+sidebarTitle: "GET /attempts"
+description: "List all gateway attempts for a payment in chronological order, including latency, error codes, and retry classification for each attempt."
+---
+
+The `GET /payments/{paymentId}/attempts` endpoint returns every gateway attempt made during the processing of a payment, ordered from first to last. Each attempt record tells you which gateway was tried, how long it took, whether it succeeded or failed, and — when it failed — whether the error was retryable (triggering the next attempt) or non-retryable (stopping orchestration immediately). Use this endpoint to understand why a payment succeeded on the second or third try, or to diagnose persistent failures.
+
+<Tip>
+  When a payment has `totalAttempts > 1`, inspect the attempts list to understand exactly which gateways were tried and why each one did not succeed before the orchestrator moved on. The `errorType` field tells you whether a failure was retryable — helping you distinguish transient gateway issues from hard declines.
+</Tip>
+
+---
+
+## Endpoint
+
+```
+GET http://localhost:3000/payments/{paymentId}/attempts
+```
+
+---
+
+## Path Parameters
+
+<ParamField path="paymentId" type="string" required>
+  The UUID of the payment whose attempts you want to retrieve.
+</ParamField>
+
+---
+
+## Example Request
+
+```bash
+curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/attempts
+```
+
+---
+
+## Response
+
+The response is a JSON array of attempt objects, sorted in ascending order by `attemptNumber`.
+
+### Attempt Object Fields
+
+<ResponseField name="id" type="string">
+  UUID uniquely identifying this attempt record.
+</ResponseField>
+
+<ResponseField name="gatewayName" type="string">
+  The name of the payment gateway that was contacted for this attempt (for example, `RAZORPAY`, `PAYU`, `CASHFREE`).
+</ResponseField>
+
+<ResponseField name="attemptNumber" type="integer">
+  The 1-based index of this attempt within the payment. The first attempt is `1`, the second is `2`, and so on.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  The outcome of this specific attempt. One of:
+  - `SUCCESS` — the gateway confirmed the payment.
+  - `FAILED` — the gateway declined or returned an error.
+  - `TIMEOUT` — the gateway did not respond within the allowed time window.
+</ResponseField>
+
+<ResponseField name="latencyMs" type="integer">
+  The time in milliseconds from when the request was sent to the gateway until a response (or timeout) was received.
+</ResponseField>
+
+<ResponseField name="errorCode" type="string | null">
+  The error code returned by the gateway if the attempt failed. `null` on success.
+</ResponseField>
+
+<ResponseField name="errorType" type="string | null">
+  Classifies whether the failure can be retried. One of:
+  - `RETRYABLE` — the error is transient; the orchestrator will try the next gateway.
+  - `NON_RETRYABLE` — the error is terminal (for example, an invalid instrument); the orchestrator stops immediately.
+  - `TIMEOUT` — the attempt timed out; the orchestrator may queue async verification.
+
+  `null` when the attempt succeeded.
+</ResponseField>
+
+<ResponseField name="gatewayTxnId" type="string | null">
+  The transaction ID assigned by the gateway. Populated on a `SUCCESS` attempt; `null` otherwise.
+</ResponseField>
+
+<ResponseField name="createdAt" type="datetime">
+  ISO 8601 timestamp of when this attempt was recorded.
+</ResponseField>
+
+---
+
+## Example Response
+
+The following example shows a payment that failed on the first gateway (retryable error) and succeeded on the second.
+
+```json
+[
+  {
+    "id": "a1b2c3d4-0000-4e5f-8a9b-111111111111",
+    "gatewayName": "PAYU",
+    "attemptNumber": 1,
+    "status": "FAILED",
+    "latencyMs": 1045,
+    "errorCode": "GATEWAY_TIMEOUT",
+    "errorType": "RETRYABLE",
+    "gatewayTxnId": null,
+    "createdAt": "2025-01-15T10:23:45.100Z"
+  },
+  {
+    "id": "b2c3d4e5-0000-4f6g-9b0c-222222222222",
+    "gatewayName": "RAZORPAY",
+    "attemptNumber": 2,
+    "status": "SUCCESS",
+    "latencyMs": 312,
+    "errorCode": null,
+    "errorType": null,
+    "gatewayTxnId": "rzp_txn_abc123xyz",
+    "createdAt": "2025-01-15T10:23:46.200Z"
+  }
+]
+```
+
+---
+
+## Error Responses
+
+| HTTP Status | Cause                                                              |
+| ----------- | ------------------------------------------------------------------ |
+| `400`       | The `paymentId` path parameter is not a valid UUID format.         |
+| `404`       | No payment exists with the given `paymentId`.                      |

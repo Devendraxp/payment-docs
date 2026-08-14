@@ -1,0 +1,154 @@
+---
+title: "Run A/B Experiments on Gateway Routing"
+sidebarTitle: "Experiments"
+description: "Create and manage A/B experiments to test alternative gateway ordering strategies and measure their impact on payment success rates."
+---
+
+Experiments let you test a different gateway ordering — the **treatment** — against the current default ordering — the **control** — to see which one produces better payment success rates. Traffic is split according to the weights you configure, and every payment attempt is tagged with its assigned variant so you can compare outcomes with statistical precision.
+
+## Experiment Lifecycle
+
+Experiments move through the following statuses:
+
+| Status | Meaning |
+|---|---|
+| `DRAFT` | Created but not yet receiving traffic. |
+| `ACTIVE` | Receiving traffic; assignments and outcomes are being recorded. |
+| `PAUSED` | Temporarily halted; no new assignments are made. |
+| `COMPLETED` | The experiment is finished; results are locked. |
+
+<Steps>
+  <Step title="Create the experiment">
+    Define the control/treatment split, the gateway order override, and which payment methods the experiment targets.
+  </Step>
+  <Step title="Verify assignment">
+    Use the `/experiments/assign` endpoint to confirm that customers are being routed to the expected variant before enabling the experiment in production traffic.
+  </Step>
+  <Step title="Let it run">
+    Allow sufficient traffic to accumulate for statistically meaningful results. Use `/experiments/{experimentId}/results` to monitor progress.
+  </Step>
+  <Step title="Review results">
+    Query the results endpoint to compare success rates and latency between the control and treatment variants.
+  </Step>
+  <Step title="Complete the experiment">
+    Call `POST /experiments/{experimentId}/complete` to lock results. If the treatment wins, update your routing configuration or create a new experiment with a 100% treatment weight to roll it out fully.
+  </Step>
+</Steps>
+
+## Create an Experiment
+
+Send a `POST` to `http://localhost:3002/experiments` with the experiment definition. This endpoint requires the `X-Internal-Api-Key` header.
+
+**Required fields**
+
+<ParamField body="name" type="string" required>
+  A human-readable label for the experiment (e.g., `"Cashfree first for UPI"`).
+</ParamField>
+
+<ParamField body="controlWeight" type="number" required>
+  Fraction of eligible traffic routed using the default gateway ordering. Must be between `0` and `1`.
+</ParamField>
+
+<ParamField body="treatmentWeight" type="number" required>
+  Fraction of eligible traffic routed using the `treatmentConfig` override. Must be between `0` and `1`.
+</ParamField>
+
+<ParamField body="treatmentConfig" type="object" required>
+  An object with a `gatewayOrderOverride` array listing gateway names in the preferred order for the treatment variant.
+</ParamField>
+
+<ParamField body="targetMethods" type="string[]" required>
+  Payment methods this experiment applies to. Accepted values: `UPI`, `CARD`, `NETBANKING`, `WALLET`.
+</ParamField>
+
+<ParamField body="startsAt" type="string">
+  ISO 8601 datetime string for when the experiment should automatically become active. Optional.
+</ParamField>
+
+<ParamField body="endsAt" type="string">
+  ISO 8601 datetime string for when the experiment should automatically complete. Optional.
+</ParamField>
+
+<ParamField body="guardrailConfig" type="object">
+  Safety guardrail settings. When configured, the experiment is paused automatically if key metrics degrade. Optional.
+</ParamField>
+
+**Example — 50/50 UPI experiment:**
+
+```bash
+curl -X POST http://localhost:3002/experiments \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Api-Key: your-api-key" \
+  -d '{
+    "name": "Cashfree first for UPI",
+    "controlWeight": 0.5,
+    "treatmentWeight": 0.5,
+    "treatmentConfig": {
+      "gatewayOrderOverride": ["cashfree", "razorpay", "payu", "juspay"]
+    },
+    "targetMethods": ["UPI"]
+  }'
+```
+
+The response includes an `id` (UUID) that you use for all subsequent operations on this experiment.
+
+<Tip>
+  To fully override gateway ordering for all traffic without splitting, set `controlWeight` to `0` and `treatmentWeight` to `1`. This is useful for a staged rollout where you want 100% of eligible payments to use the new gateway order while retaining the ability to pause or roll back the experiment.
+</Tip>
+
+## Check Experiment Assignment
+
+Use the assignment endpoint to verify which variant a specific customer would be placed in for a given payment method. Assignment is **deterministic** — the same `customerId` and `method` combination always produces the same variant.
+
+```bash
+curl "http://localhost:3002/experiments/assign?customerId=cust_001&method=UPI"
+```
+
+```json
+{
+  "experimentId": "9b1deb4d-...",
+  "customerId": "cust_001",
+  "method": "UPI",
+  "variant": "treatment"
+}
+```
+
+<Note>
+  Assignment is deterministic based on the `customerId`. The same customer always receives the same variant for the lifetime of the experiment, which prevents within-user variance from contaminating the results.
+</Note>
+
+## Get Experiment Results
+
+Once an experiment is active and has accumulated traffic, retrieve a comparison of outcomes by variant:
+
+```bash
+curl http://localhost:3002/experiments/{experimentId}/results
+```
+
+## Lifecycle Management
+
+**Pause** a running experiment — no new assignments are made, but existing assignments are preserved:
+
+```bash
+curl -X POST http://localhost:3002/experiments/{experimentId}/pause \
+  -H "X-Internal-Api-Key: your-api-key"
+```
+
+**Complete** an experiment to lock the results:
+
+```bash
+curl -X POST http://localhost:3002/experiments/{experimentId}/complete \
+  -H "X-Internal-Api-Key: your-api-key"
+```
+
+**List** all experiments:
+
+```bash
+curl http://localhost:3002/experiments
+```
+
+**Get** a single experiment by ID:
+
+```bash
+curl http://localhost:3002/experiments/{experimentId}
+```

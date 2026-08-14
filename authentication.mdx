@@ -1,0 +1,125 @@
+---
+title: "Authenticate Requests to Payment Gateway API"
+sidebarTitle: "Authentication"
+description: "Payment Gateway uses two access modes: public endpoints that require no credentials, and protected endpoints that require an internal API key header."
+---
+
+Payment Gateway divides its API surface into two access tiers. Most read-oriented and payment-processing endpoints are **public** — you call them without any credential. A smaller set of administrative endpoints that can modify gateway behaviour, circuit breaker state, retry policies, and experiments are **protected** and require you to pass an internal API key via a request header.
+
+<Info>
+  There is no user-level authentication (no OAuth, no JWT). The internal API key is a shared secret intended for backend services and administrators, not end users.
+</Info>
+
+## Access Tiers
+
+<Tabs>
+  <Tab title="Public Endpoints">
+    These endpoints accept requests without any authentication header. Call them directly from your backend service or any HTTP client.
+
+    **Payment Orchestrator** (`http://localhost:3000`)
+
+    | Method | Path | Description |
+    |---|---|---|
+    | `POST` | `/payments` | Create a payment |
+    | `GET` | `/payments/{paymentId}` | Get payment details |
+    | `GET` | `/payments/{paymentId}/attempts` | List gateway attempts |
+    | `GET` | `/payments/{paymentId}/routing-decision` | Get stored routing decision |
+    | `GET` | `/payments/{paymentId}/status-verification` | Get async verification status |
+    | `GET` | `/gateways` | List all gateway configs |
+    | `GET` | `/gateways/{gatewayName}` | Get a single gateway config |
+    | `GET` | `/scoring/debug` | Inspect ranked gateways for a payment context |
+    | `GET` | `/circuit-breaker/status` | List circuit breaker states |
+
+    **Metrics Service** (`http://localhost:3001`)
+
+    | Method | Path | Description |
+    |---|---|---|
+    | `GET` | `/metrics/health` | Kafka consumer and buffer status |
+    | `GET` | `/metrics/gateways` | All gateway hot metrics |
+    | `GET` | `/metrics/gateways/{gatewayName}` | Gateway metrics grouped by method |
+    | `GET` | `/metrics/gateways/{gatewayName}/{method}` | Gateway-method hot metrics |
+    | `GET` | `/metrics/history/{gatewayName}` | Persisted metric history |
+
+    **Experiment Service** (`http://localhost:3002`)
+
+    | Method | Path | Description |
+    |---|---|---|
+    | `GET` | `/experiments` | List experiments |
+    | `GET` | `/experiments/assign` | Assign a customer to an active experiment |
+    | `GET` | `/experiments/{experimentId}` | Get experiment details |
+    | `GET` | `/experiments/{experimentId}/results` | Get experiment results |
+    | `GET` | `/bandit/state/{segment}` | Get Thompson Sampling state for a segment |
+    | `GET` | `/bandit/order/{segment}` | Sample gateway order for a segment |
+  </Tab>
+
+  <Tab title="Protected Endpoints">
+    These endpoints modify system state and require you to pass your internal API key in the `X-Internal-Api-Key` header on every request.
+
+    **Payment Orchestrator** (`http://localhost:3000`)
+
+    | Method | Path | Description |
+    |---|---|---|
+    | `PATCH` | `/gateways/{gatewayName}` | Update a gateway simulator config |
+    | `POST` | `/circuit-breaker/force-open/{gatewayName}/{method}` | Force a gateway-method route open (unhealthy) |
+    | `POST` | `/circuit-breaker/force-close/{gatewayName}/{method}` | Force a gateway-method route closed (healthy) |
+    | `GET` | `/retry-policy` | List all retry policies |
+    | `GET` | `/retry-policy/{merchantId}` | Get a merchant's retry policy |
+    | `PUT` | `/retry-policy/{merchantId}` | Create or update a merchant retry policy |
+
+    **Experiment Service** (`http://localhost:3002`)
+
+    | Method | Path | Description |
+    |---|---|---|
+    | `POST` | `/experiments` | Create an experiment |
+    | `PATCH` | `/experiments/{experimentId}` | Update an experiment |
+    | `POST` | `/experiments/{experimentId}/pause` | Pause an experiment |
+    | `POST` | `/experiments/{experimentId}/complete` | Complete an experiment |
+    | `POST` | `/bandit/reset/{segment}/{gatewayName}` | Reset gateway bandit state |
+  </Tab>
+</Tabs>
+
+## Passing the Internal API Key
+
+Include the key as a custom HTTP header named `X-Internal-Api-Key` on every request to a protected endpoint.
+
+```bash
+curl -X PATCH http://localhost:3000/gateways/razorpay \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Api-Key: your-api-key" \
+  -d '{ "successRate": 0.90 }'
+```
+
+The header name is **case-insensitive** at the HTTP transport level, but use `X-Internal-Api-Key` (Title-Case) as shown above to match the convention used throughout this documentation.
+
+<ParamField header="X-Internal-Api-Key" type="string" required>
+  Your internal API key. Pass this header on every request to a protected endpoint.
+</ParamField>
+
+## Error Responses
+
+When you call a protected endpoint with a missing or incorrect key, the API returns an HTTP `401 Unauthorized` response.
+
+```json
+{
+  "statusCode": 401,
+  "message": "Missing or invalid internal API key",
+  "error": "Unauthorized"
+}
+```
+
+There is no distinction between a missing key and a wrong key in the error response — both return the same `401`. Verify that you are reading the key from the correct environment variable and that no extra whitespace has been introduced.
+
+## Default Development Key
+
+<Warning>
+  The default key shipped with the development environment is `dev-internal-key-change-in-prod`. This key is publicly known and **must be replaced** before you deploy to any non-local environment. Set the `INTERNAL_API_KEY` environment variable to a securely generated secret in staging and production.
+</Warning>
+
+To rotate the key, update the environment variable that the Payment Orchestrator and Experiment Service read at startup, then restart both services. All callers must update their stored key at the same time — there is no key versioning or grace period.
+
+## Security Best Practices
+
+- **Never expose the internal API key in client-side code**, browser applications, or mobile apps. It is a server-to-server credential only.
+- **Treat the key like a password.** Store it in a secrets manager or environment variable, not in source control.
+- **Restrict access at the network level.** Protected endpoints are intended for internal operational tooling. Consider placing them behind a private network boundary so they are unreachable from the public internet.
+- **Rotate the key regularly.** If you suspect the key has been compromised, change it immediately and restart the affected services.

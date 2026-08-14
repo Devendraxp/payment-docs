@@ -1,0 +1,117 @@
+---
+title: "Optimize Gateway Routing with Thompson Sampling"
+sidebarTitle: "Bandit Optimization"
+description: "Use the multi-armed bandit optimizer to continuously learn and adapt gateway routing order per payment segment based on real-time outcomes."
+---
+
+The bandit optimizer uses **Thompson Sampling** — a Bayesian algorithm — to continuously learn which gateway ordering maximizes success rates for each payment segment. Unlike a static configuration or a time-limited A/B experiment, the bandit adapts in real time: gateways that consistently succeed receive more traffic, while underperforming gateways are ranked lower automatically. No manual intervention is required for day-to-day optimization.
+
+## How It Works
+
+Each gateway is modelled as a Beta distribution with two parameters:
+
+- **`alpha`** — incremented on each successful payment attempt.
+- **`beta`** — incremented on each failed attempt.
+
+When the routing engine needs to order gateways for a payment, it draws a random sample from each gateway's Beta distribution. The gateway with the highest sampled value is tried first. Over time, gateways with higher success rates develop higher `alpha` values, which shifts their distributions towards 1 and causes them to be sampled to the top more reliably.
+
+**Segments** correspond directly to payment methods: `UPI`, `CARD`, `NETBANKING`, `WALLET`. Each segment maintains independent bandit state, so a gateway's UPI performance does not affect its CARD ranking.
+
+<Note>
+  You do not need to manually update bandit state. The system observes every payment attempt outcome and updates `alpha` or `beta` automatically. The state reflects real-time gateway health at all times.
+</Note>
+
+## Contrast with A/B Experiments
+
+<CardGroup cols={2}>
+  <Card title="A/B Experiments" icon="flask">
+    Fixed traffic split between control and treatment. You define start/end dates, collect results, then manually decide a winner. Best for validating a specific hypothesis with statistical rigour.
+  </Card>
+  <Card title="Bandit Optimization" icon="chart-line">
+    Always running, always adapting. Automatically routes more traffic to better-performing gateways. Best for continuous, low-friction optimization without manual result reviews.
+  </Card>
+</CardGroup>
+
+## Check Bandit State
+
+Retrieve the current Thompson Sampling state for all gateways in a segment:
+
+```bash
+curl http://localhost:3002/bandit/state/UPI
+```
+
+```json
+{
+  "cashfree": {
+    "gatewayName": "cashfree",
+    "alpha": 142,
+    "beta": 18,
+    "totalSamples": 159
+  },
+  "razorpay": {
+    "gatewayName": "razorpay",
+    "alpha": 98,
+    "beta": 41,
+    "totalSamples": 138
+  },
+  "payu": {
+    "gatewayName": "payu",
+    "alpha": 76,
+    "beta": 54,
+    "totalSamples": 129
+  }
+}
+```
+
+A high `alpha` relative to `beta` indicates a gateway with a strong track record. `totalSamples` shows how much evidence has been accumulated.
+
+## Sample the Optimal Gateway Order
+
+Ask the bandit to return gateways sorted by their Thompson-sampled probability of success for a given segment. Pass the gateways you want ranked as a comma-separated query parameter:
+
+```bash
+curl "http://localhost:3002/bandit/order/UPI?gateways=cashfree,razorpay,payu,juspay"
+```
+
+```json
+["cashfree", "razorpay", "juspay", "payu"]
+```
+
+The returned array is the recommended attempt order for that payment segment at this moment. Because sampling is stochastic, the exact order may vary slightly between calls — this is intentional and ensures exploration of all gateways even when one is currently dominant.
+
+## Reset a Gateway's State
+
+Reset a specific gateway's bandit state within a segment back to the uninformative prior (`alpha = 1`, `beta = 1`, `totalSamples = 0`). This endpoint requires the `X-Internal-Api-Key` header.
+
+```bash
+curl -X POST http://localhost:3002/bandit/reset/UPI/cashfree \
+  -H "X-Internal-Api-Key: your-api-key"
+```
+
+```json
+{
+  "gatewayName": "cashfree",
+  "alpha": 1,
+  "beta": 1,
+  "totalSamples": 0
+}
+```
+
+<Warning>
+  The reset endpoint requires the `X-Internal-Api-Key` header. Calls without a valid key receive a `401 Unauthorized` response. Resetting deletes all accumulated evidence for that gateway in that segment — the bandit will treat it as a completely new gateway until new outcomes are observed.
+</Warning>
+
+<Tip>
+  Reset a gateway's state after it undergoes significant infrastructure changes — for example, after a major platform upgrade or a prolonged outage that has skewed its `beta` count. Resetting lets the bandit re-learn from scratch using current performance data rather than being biased by historical failure counts that no longer reflect reality.
+</Tip>
+
+## Supported Segments
+
+The following segments are available. Each segment tracks gateway performance independently:
+
+| Segment | Payment Method |
+|---|---|
+| `UPI` | UPI payments (VPA-based) |
+| `CARD` | Debit and credit card payments |
+| `NETBANKING` | Net banking payments |
+| `WALLET` | Wallet payments (Paytm, PhonePe, etc.) |

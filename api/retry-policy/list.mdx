@@ -1,0 +1,93 @@
+---
+title: "GET /retry-policy — List All Retry Policies"
+sidebarTitle: "GET /retry-policy"
+description: "List every merchant retry policy stored in the system, including attempt limits, latency budgets, and timeout-retry behaviour. Requires the internal API key."
+---
+
+The `GET /retry-policy` endpoint returns all merchant-specific retry policies configured in the orchestrator. Each policy controls how aggressively the orchestrator retries a failed or timed-out payment across alternative gateways for that merchant. You can use this endpoint to audit existing policies, compare settings across merchants, or confirm that a recent upsert persisted correctly.
+
+<Warning>
+  This endpoint requires the `X-Internal-Api-Key` header. Requests that omit the header or supply an invalid key receive a `401 Unauthorized` response. Retry policy data is considered internal configuration — do not expose it in client-facing applications.
+</Warning>
+
+## Endpoint
+
+```
+GET http://localhost:3000/retry-policy
+```
+
+## Example Request
+
+```bash
+curl http://localhost:3000/retry-policy \
+  -H "X-Internal-Api-Key: your-api-key"
+```
+
+## Response
+
+The endpoint returns an array of retry policy objects. Each element has the following fields.
+
+<ResponseField name="id" type="string" required>
+  Unique UUID for the retry policy record.
+</ResponseField>
+
+<ResponseField name="merchantId" type="string" required>
+  The merchant this policy applies to (e.g., `"amazon"`, `"swiggy"`). Each merchant has at most one policy row.
+</ResponseField>
+
+<ResponseField name="maxAttempts" type="integer" required>
+  Maximum number of gateway attempts the orchestrator will make for a single payment before returning a final failure. Includes the initial attempt.
+</ResponseField>
+
+<ResponseField name="latencyBudgetMs" type="integer" required>
+  Total millisecond budget allocated across all gateway attempts for a single payment. Once the cumulative latency across attempts exceeds this value, the orchestrator stops retrying even if `maxAttempts` has not been reached.
+</ResponseField>
+
+<ResponseField name="retryOnTimeout" type="boolean" required>
+  When `true`, a gateway timeout counts as a retryable failure and the orchestrator will try the next gateway in the ranked list. When `false`, timeouts are treated as terminal failures.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean" required>
+  When `false`, this policy is ignored and the system falls back to the default retry configuration for the merchant.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+  ISO 8601 datetime when this policy was first created.
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string" required>
+  ISO 8601 datetime when this policy was last modified.
+</ResponseField>
+
+## Example Response
+
+```json
+[
+  {
+    "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    "merchantId": "amazon",
+    "maxAttempts": 3,
+    "latencyBudgetMs": 10000,
+    "retryOnTimeout": true,
+    "enabled": true,
+    "createdAt": "2024-06-01T08:00:00.000Z",
+    "updatedAt": "2024-06-10T14:22:31.000Z"
+  },
+  {
+    "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+    "merchantId": "swiggy",
+    "maxAttempts": 2,
+    "latencyBudgetMs": 6000,
+    "retryOnTimeout": false,
+    "enabled": true,
+    "createdAt": "2024-05-15T10:30:00.000Z",
+    "updatedAt": "2024-05-15T10:30:00.000Z"
+  }
+]
+```
+
+## Error Responses
+
+| Status | Description |
+|--------|-------------|
+| `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or contains an invalid key. |

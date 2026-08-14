@@ -1,0 +1,204 @@
+---
+title: "POST /payments — Create a New Payment"
+sidebarTitle: "POST /payments"
+description: "Create a payment by specifying a merchant, customer, amount, payment method, and instrument. Returns status, gateway, and latency details."
+---
+
+The `POST /payments` endpoint initiates a new payment through the gateway orchestrator. The system selects the best available gateway using a composite scoring algorithm, attempts the payment, and returns a result indicating success, failure, or pending verification. Every request must include a unique `idempotency-key` header — submitting the same key a second time returns the original response without creating a duplicate payment.
+
+**Rate limit:** 100 requests per minute per IP address.
+
+---
+
+## Endpoint
+
+```
+POST http://localhost:3000/payments
+```
+
+---
+
+## Request Headers
+
+| Header            | Required | Description                                                                  |
+| ----------------- | -------- | ---------------------------------------------------------------------------- |
+| `Content-Type`    | Yes      | Must be `application/json`                                                   |
+| `idempotency-key` | Yes      | A unique string you generate per payment. Reusing a key returns the cached response. |
+
+---
+
+## Request Body
+
+<ParamField body="merchantId" type="string" required>
+  Your merchant identifier. Used for gateway routing and reporting.
+</ParamField>
+
+<ParamField body="customerId" type="string" required>
+  The identifier of the customer making the payment.
+</ParamField>
+
+<ParamField body="amountMinor" type="integer" required>
+  The payment amount expressed in the **smallest currency unit** (for example, paise for INR). Must be at least `1`.
+</ParamField>
+
+<ParamField body="paymentMethod" type="string" required>
+  The payment method to use. Must be one of: `UPI`, `CARD`, `NETBANKING`, `WALLET`.
+</ParamField>
+
+<ParamField body="instrument" type="object" required>
+  Details of the payment instrument. The expected fields vary by `paymentMethod` — see the examples below.
+</ParamField>
+
+---
+
+## Instrument Structure by Payment Method
+
+The `instrument` object must match the selected `paymentMethod`. The following tabs show the correct structure for each method.
+
+<Tabs>
+  <Tab title="UPI">
+    ```json
+    {
+      "vpa": "user@paytm",
+      "bank": "HDFC"
+    }
+    ```
+    | Field | Type   | Description                          |
+    | ----- | ------ | ------------------------------------ |
+    | `vpa` | string | Virtual Payment Address of the payee |
+    | `bank` | string | Bank associated with the VPA         |
+  </Tab>
+
+  <Tab title="CARD">
+    ```json
+    {
+      "cardNetwork": "VISA",
+      "bank": "HDFC",
+      "last4": "1234"
+    }
+    ```
+    | Field         | Type   | Description                                |
+    | ------------- | ------ | ------------------------------------------ |
+    | `cardNetwork` | string | Card network (e.g., `VISA`, `MASTERCARD`)  |
+    | `bank`        | string | Issuing bank of the card                   |
+    | `last4`       | string | Last four digits of the card number        |
+  </Tab>
+
+  <Tab title="NETBANKING">
+    ```json
+    {
+      "bank": "HDFC"
+    }
+    ```
+    | Field  | Type   | Description          |
+    | ------ | ------ | -------------------- |
+    | `bank` | string | Bank to pay through  |
+  </Tab>
+
+  <Tab title="WALLET">
+    ```json
+    {
+      "walletProvider": "PAYTM"
+    }
+    ```
+    | Field            | Type   | Description                                    |
+    | ---------------- | ------ | ---------------------------------------------- |
+    | `walletProvider` | string | Wallet provider name (e.g., `PAYTM`, `PHONEPE`) |
+  </Tab>
+</Tabs>
+
+---
+
+## Example Request
+
+```bash
+curl -X POST http://localhost:3000/payments \
+  -H "Content-Type: application/json" \
+  -H "idempotency-key: pay-upi-a1b2c3d4" \
+  -d '{
+    "merchantId": "amazon",
+    "customerId": "cust_upi_001",
+    "amountMinor": 33000,
+    "paymentMethod": "UPI",
+    "instrument": {
+      "vpa": "user@paytm",
+      "bank": "HDFC"
+    }
+  }'
+```
+
+---
+
+## Response Fields
+
+<ResponseField name="paymentId" type="string">
+  UUID of the newly created payment. Use this ID to retrieve the payment, list attempts, or check routing decisions.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Final status of the payment. One of:
+  - `SUCCESS` — the payment was confirmed by the gateway.
+  - `FAILED` — all gateway attempts were exhausted without success.
+  - `PENDING_VERIFICATION` — the payment timed out at the gateway and is being verified asynchronously.
+</ResponseField>
+
+<ResponseField name="finalGateway" type="string | null">
+  The name of the gateway that successfully processed the payment. `null` if the payment failed or is pending verification.
+</ResponseField>
+
+<ResponseField name="totalAttempts" type="number">
+  The total number of gateway attempts made before a final status was reached.
+</ResponseField>
+
+<ResponseField name="totalLatencyMs" type="number">
+  The total time in milliseconds spent across all gateway routing attempts.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  A human-readable description of the payment outcome.
+</ResponseField>
+
+---
+
+## Example Responses
+
+<Tabs>
+  <Tab title="Success">
+    ```json
+    {
+      "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
+      "status": "SUCCESS",
+      "finalGateway": "RAZORPAY",
+      "totalAttempts": 1,
+      "totalLatencyMs": 312,
+      "message": "Payment processed successfully"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Failed">
+    ```json
+    {
+      "paymentId": "c4f3b2e5-8g7f-5d6c-0b9e-234567890bcd",
+      "status": "FAILED",
+      "finalGateway": null,
+      "totalAttempts": 3,
+      "totalLatencyMs": 4821,
+      "message": "All gateway attempts exhausted"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  **About `PENDING_VERIFICATION`:** When a gateway call times out, the orchestrator cannot immediately confirm whether the payment succeeded or failed. The payment is set to `PENDING_VERIFICATION` and an asynchronous verification job is queued. Poll `GET /payments/{paymentId}/status-verification` until `verifiedAt` is populated to get the final resolved status.
+</Note>
+
+---
+
+## Error Responses
+
+| HTTP Status | Cause                                                                                   |
+| ----------- | --------------------------------------------------------------------------------------- |
+| `400`       | Request body failed validation — for example, a missing required field, `amountMinor` less than `1`, or an unrecognised `paymentMethod`. |
+| `429`       | Rate limit exceeded. You have sent more than 100 requests in the past 60 seconds from this IP. |

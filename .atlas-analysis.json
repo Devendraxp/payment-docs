@@ -1,0 +1,143 @@
+{
+  "projectType": "api-service",
+  "projectName": "Payment Gateway",
+  "projectDescription": "A payment aggregator API that routes transactions across multiple payment gateways using intelligent scoring, circuit breakers, A/B experiments, and Thompson Sampling bandit optimization.",
+  "theme": "luma",
+  "primaryColor": "#2563EB",
+  "lightColor": "#EFF6FF",
+  "darkColor": "#1E3A8A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/payment-lifecycle",
+              "concepts/gateway-routing",
+              "concepts/circuit-breaker",
+              "concepts/idempotency"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/create-payment",
+              "guides/retry-policies",
+              "guides/experiments",
+              "guides/bandit-optimization",
+              "guides/metrics-monitoring"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Payments",
+            "pages": [
+              "api/payments/create",
+              "api/payments/get",
+              "api/payments/attempts",
+              "api/payments/routing-decision",
+              "api/payments/status-verification"
+            ]
+          },
+          {
+            "group": "Gateways & Routing",
+            "pages": [
+              "api/gateways/list",
+              "api/gateways/get",
+              "api/gateways/update",
+              "api/scoring/debug"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "api/circuit-breaker/status",
+              "api/circuit-breaker/force-open",
+              "api/circuit-breaker/force-close",
+              "api/retry-policy/list",
+              "api/retry-policy/get",
+              "api/retry-policy/upsert"
+            ]
+          },
+          {
+            "group": "Metrics",
+            "pages": [
+              "api/metrics/gateways",
+              "api/metrics/gateway-method",
+              "api/metrics/history"
+            ]
+          },
+          {
+            "group": "Experiments & Bandit",
+            "pages": [
+              "api/experiments/create",
+              "api/experiments/list",
+              "api/experiments/assign",
+              "api/experiments/results",
+              "api/bandit/state",
+              "api/bandit/order"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-gateway payment routing with intelligent scoring across success rate, latency, method affinity, bank affinity, and amount tiers",
+    "Circuit breaker protection with CLOSED / HALF_OPEN / OPEN states per gateway-method pair",
+    "Idempotency enforcement via idempotency-key header to prevent duplicate charges",
+    "Per-merchant retry policies with configurable max attempts, latency budget, and timeout retry behavior",
+    "A/B experimentation framework with deterministic customer assignment and control/treatment gateway ordering",
+    "Thompson Sampling bandit optimization for continuous gateway order learning per payment segment",
+    "Real-time hot metrics (5-minute sliding window) and persisted metric history per gateway",
+    "Asynchronous payment verification via RabbitMQ for timeout-state payments",
+    "Rate limiting at 100 requests per minute per IP on payment creation",
+    "Support for UPI, CARD, NETBANKING, and WALLET payment methods"
+  ],
+  "publicApiSurface": [
+    "POST /payments",
+    "GET /payments/{paymentId}",
+    "GET /payments/{paymentId}/attempts",
+    "GET /payments/{paymentId}/routing-decision",
+    "GET /payments/{paymentId}/status-verification",
+    "GET /gateways",
+    "GET /gateways/{gatewayName}",
+    "PATCH /gateways/{gatewayName}",
+    "GET /scoring/debug",
+    "GET /circuit-breaker/status",
+    "POST /circuit-breaker/force-open/{gatewayName}/{method}",
+    "POST /circuit-breaker/force-close/{gatewayName}/{method}",
+    "GET /retry-policy",
+    "GET /retry-policy/{merchantId}",
+    "PUT /retry-policy/{merchantId}",
+    "GET /metrics/gateways",
+    "GET /metrics/gateways/{gatewayName}",
+    "GET /metrics/gateways/{gatewayName}/{method}",
+    "GET /metrics/history/{gatewayName}",
+    "POST /experiments",
+    "GET /experiments",
+    "GET /experiments/assign",
+    "GET /experiments/{experimentId}",
+    "PATCH /experiments/{experimentId}",
+    "POST /experiments/{experimentId}/pause",
+    "POST /experiments/{experimentId}/complete",
+    "GET /experiments/{experimentId}/results",
+    "GET /bandit/state/{segment}",
+    "GET /bandit/order/{segment}",
+    "POST /bandit/reset/{segment}/{gatewayName}"
+  ]
+}

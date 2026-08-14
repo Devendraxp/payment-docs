@@ -1,0 +1,54 @@
+---
+title: "POST /circuit-breaker/force-open — Open a Circuit"
+sidebarTitle: "Force Open"
+description: "Immediately force a gateway-method circuit to the OPEN state, removing it from routing. Useful for emergency traffic diversion and failover testing."
+---
+
+The `POST /circuit-breaker/force-open/{gatewayName}/{method}` endpoint immediately transitions a gateway-method circuit to the `OPEN` state, regardless of its current failure count or health metrics. Use this endpoint in emergency situations where you know a gateway is experiencing issues but automatic tripping hasn't occurred yet — for example, during a gateway-side incident that isn't yet reflected in your recent traffic window. It is also a useful tool for testing that your failover routing behaves correctly in staging environments.
+
+<Warning>
+  This endpoint requires the `X-Internal-Api-Key` header. Requests that omit the header or supply an invalid key receive a `401 Unauthorized` response. Forcing circuits open in production will immediately stop routing traffic to the affected gateway-method pair. Apply changes carefully and monitor your payment success rates.
+</Warning>
+
+## Endpoint
+
+```
+POST http://localhost:3000/circuit-breaker/force-open/{gatewayName}/{method}
+```
+
+## Path Parameters
+
+<ParamField path="gatewayName" type="string" required>
+  The internal name of the gateway whose circuit you want to open (e.g., `razorpay`, `cashfree`, `payu`, `juspay`, `hdfc_gateway`).
+</ParamField>
+
+<ParamField path="method" type="string" required>
+  The payment method leg of the circuit to open. Must be one of `UPI`, `CARD`, `NETBANKING`, or `WALLET`. The value is normalised to uppercase automatically.
+</ParamField>
+
+## Example Request
+
+```bash
+curl -X POST http://localhost:3000/circuit-breaker/force-open/razorpay/UPI \
+  -H "X-Internal-Api-Key: your-api-key"
+```
+
+## Response
+
+```json
+{
+  "status": "OPEN",
+  "gatewayName": "razorpay",
+  "method": "UPI"
+}
+```
+
+<Tip>
+  Once you have resolved the underlying gateway issue, call [`POST /circuit-breaker/force-close/{gatewayName}/{method}`](/api/circuit-breaker/force-close) to restore the circuit to `CLOSED` and allow traffic to flow again. Alternatively, you can wait for the automatic half-open probing cycle to recover the circuit on its own.
+</Tip>
+
+## Error Responses
+
+| Status | Description |
+|--------|-------------|
+| `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or contains an invalid key. |

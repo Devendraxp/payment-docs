@@ -1,0 +1,78 @@
+---
+title: "PUT /retry-policy/{merchantId} — Set Merchant Policy"
+sidebarTitle: "PUT /retry-policy/:id"
+description: "Create or fully replace the retry policy for a specific merchant. Controls attempt limits, total latency budget, and whether timeouts trigger a retry. Requires the internal API key."
+---
+
+The `PUT /retry-policy/{merchantId}` endpoint creates a new retry policy for a merchant, or replaces an existing one in full. Use it to tune how aggressively the orchestrator retries failed payments for a specific merchant — for example, giving a high-volume merchant a larger attempt budget while keeping a low-latency budget for checkout flows where speed is critical. The operation is idempotent: calling it multiple times with the same body always produces the same stored policy.
+
+<Warning>
+  This endpoint requires the `X-Internal-Api-Key` header. Requests that omit the header or supply an invalid key receive a `401 Unauthorized` response. Changes take effect immediately for all subsequent payments processed for the merchant.
+</Warning>
+
+## Endpoint
+
+```
+PUT http://localhost:3000/retry-policy/{merchantId}
+```
+
+## Path Parameters
+
+<ParamField path="merchantId" type="string" required>
+  The unique merchant identifier to create or update the policy for (e.g., `"amazon"`, `"swiggy"`). If a policy already exists for this merchant it is fully replaced by the new values.
+</ParamField>
+
+## Request Body
+
+<ParamField body="maxAttempts" type="integer" required>
+  Maximum number of gateway attempts the orchestrator will make per payment, including the initial attempt. Must be `>= 1`. Setting this to `1` effectively disables retries — only the top-ranked gateway is tried.
+</ParamField>
+
+<ParamField body="latencyBudgetMs" type="integer" required>
+  Total millisecond budget allocated across all gateway attempts for a single payment. Must be `>= 100`. When the cumulative time spent across attempts exceeds this value the orchestrator stops retrying and returns a failure, even if `maxAttempts` has not been exhausted. This prevents a single slow payment from blocking the customer for too long.
+</ParamField>
+
+<ParamField body="retryOnTimeout" type="boolean" required>
+  Controls whether a gateway timeout is treated as a retryable failure. When `true`, a timeout causes the orchestrator to move on to the next ranked gateway (subject to the remaining budget). When `false`, a timeout is treated as a terminal failure and the payment is not retried.
+</ParamField>
+
+<ParamField body="enabled" type="boolean">
+  Whether this policy should be applied. Defaults to `true`. Set to `false` to temporarily suspend the custom policy without deleting it — the orchestrator will use the platform default policy in the meantime.
+</ParamField>
+
+## Example Request
+
+```bash
+curl -X PUT http://localhost:3000/retry-policy/amazon \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Api-Key: your-api-key" \
+  -d '{ "maxAttempts": 3, "latencyBudgetMs": 10000, "retryOnTimeout": true }'
+```
+
+## Response
+
+On success the endpoint returns the complete, created or updated retry policy object.
+
+```json
+{
+  "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+  "merchantId": "amazon",
+  "maxAttempts": 3,
+  "latencyBudgetMs": 10000,
+  "retryOnTimeout": true,
+  "enabled": true,
+  "createdAt": "2024-06-01T08:00:00.000Z",
+  "updatedAt": "2024-06-15T09:45:00.000Z"
+}
+```
+
+<Tip>
+  A `maxAttempts` of `3` combined with a `latencyBudgetMs` of `10000` (10 seconds) is a practical starting point for most merchants — it allows two retries across alternative gateways while keeping the worst-case payment time under 10 seconds. If you need lower checkout latency, reduce `latencyBudgetMs` to `5000` or `6000`. If your integration can tolerate longer waits (e.g., a subscription billing flow), increasing `latencyBudgetMs` to `15000` lets you attempt more gateways before giving up.
+</Tip>
+
+## Error Responses
+
+| Status | Description |
+|--------|-------------|
+| `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or contains an invalid key. |
+| `400 Bad Request` | One or more required fields are missing or fail validation (e.g., `latencyBudgetMs` below `100`). |

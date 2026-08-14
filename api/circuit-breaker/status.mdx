@@ -1,0 +1,96 @@
+---
+title: "GET /circuit-breaker/status — View Circuit States"
+sidebarTitle: "GET /status"
+description: "Retrieve the current circuit-breaker state for every tracked gateway-method pair, including failure counts, probe activity, and recent traffic window data."
+---
+
+The `GET /circuit-breaker/status` endpoint returns a snapshot of every circuit breaker the orchestrator is currently tracking. Each circuit corresponds to a unique gateway-method pair (e.g., `razorpay:UPI`) and reflects real-time failure and success data from the recent rolling window. You can use this endpoint to confirm whether a gateway has tripped, to monitor recovery progress in `HALF_OPEN` state, or to verify that a forced state change took effect. No authentication is required.
+
+## Endpoint
+
+```
+GET http://localhost:3000/circuit-breaker/status
+```
+
+## Example Request
+
+```bash
+curl http://localhost:3000/circuit-breaker/status
+```
+
+## Circuit States
+
+Each circuit breaker operates as a three-state machine:
+
+| State | Meaning |
+|-------|---------|
+| `CLOSED` | The circuit is healthy. All traffic flows through normally. |
+| `OPEN` | The circuit is unhealthy. The orchestrator skips this gateway-method pair and routes to alternatives. |
+| `HALF_OPEN` | The circuit is probing for recovery. A limited number of requests are allowed through; if they succeed the circuit closes, otherwise it reopens. |
+
+## Response
+
+The response object is keyed by `gatewayName:method` strings. Each value is a circuit state object with the following fields.
+
+<ResponseField name="state" type="string" required>
+  Current circuit state: `CLOSED`, `OPEN`, or `HALF_OPEN`.
+</ResponseField>
+
+<ResponseField name="failureCount" type="integer" required>
+  Number of failures recorded in the current tracking window. When this count exceeds the configured threshold the circuit trips to `OPEN`.
+</ResponseField>
+
+<ResponseField name="lastFailureTs" type="number" required>
+  Unix timestamp (milliseconds) of the most recent failure recorded for this circuit. Use this to determine how long ago the last failure occurred.
+</ResponseField>
+
+<ResponseField name="probeCount" type="integer" required>
+  Number of probe requests sent while the circuit is in `HALF_OPEN` state. Resets to `0` when the circuit transitions out of `HALF_OPEN`.
+</ResponseField>
+
+<ResponseField name="recentSuccesses" type="integer" required>
+  Number of successful requests recorded in the current rolling window.
+</ResponseField>
+
+<ResponseField name="recentAttempts" type="integer" required>
+  Total number of requests (successes + failures) recorded in the current rolling window.
+</ResponseField>
+
+## Example Response
+
+```json
+{
+  "razorpay:UPI": {
+    "state": "CLOSED",
+    "failureCount": 2,
+    "lastFailureTs": 1718000123456,
+    "probeCount": 0,
+    "recentSuccesses": 47,
+    "recentAttempts": 50
+  },
+  "razorpay:CARD": {
+    "state": "OPEN",
+    "failureCount": 15,
+    "lastFailureTs": 1718000987654,
+    "probeCount": 0,
+    "recentSuccesses": 3,
+    "recentAttempts": 18
+  },
+  "cashfree:UPI": {
+    "state": "HALF_OPEN",
+    "failureCount": 10,
+    "lastFailureTs": 1718000456789,
+    "probeCount": 3,
+    "recentSuccesses": 2,
+    "recentAttempts": 3
+  },
+  "payu:NETBANKING": {
+    "state": "CLOSED",
+    "failureCount": 0,
+    "lastFailureTs": 0,
+    "probeCount": 0,
+    "recentSuccesses": 32,
+    "recentAttempts": 32
+  }
+}
+```

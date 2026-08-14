@@ -1,0 +1,120 @@
+---
+title: "POST /experiments — Create a Routing Experiment"
+sidebarTitle: "POST /experiments"
+description: "Create an A/B experiment that splits traffic between your default gateway ordering and a custom treatment configuration for a set of payment methods."
+---
+
+The `POST /experiments` endpoint lets you define a new A/B routing experiment. An experiment divides incoming payment traffic for one or more payment methods between a control variant (your current default gateway ordering) and a treatment variant (a custom ordering you specify). Once created, the experiment service assigns customers deterministically to one of the two variants whenever the payment orchestrator calls `/experiments/assign`. This endpoint is protected — you must include a valid `X-Internal-Api-Key` header.
+
+<Warning>
+  This endpoint requires the `X-Internal-Api-Key` request header. Requests without a valid key receive a `401 Unauthorized` response. Keep this key out of client-side code and public repositories.
+</Warning>
+
+## Endpoint
+
+```
+POST http://localhost:3002/experiments
+```
+
+## Request Headers
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/json` |
+| `X-Internal-Api-Key` | Your internal API key |
+
+## Request Body
+
+<ParamField body="name" type="string" required>
+  A human-readable name for the experiment. Use something descriptive enough to identify the experiment's hypothesis at a glance — for example, `"Cashfree first for UPI"`.
+</ParamField>
+
+<ParamField body="controlWeight" type="number" required>
+  The fraction of traffic that uses the default routing logic (control variant). Must be a value between `0` and `1`. Together with `treatmentWeight`, the two values should sum to `1.0`.
+</ParamField>
+
+<ParamField body="treatmentWeight" type="number" required>
+  The fraction of traffic that uses the `treatmentConfig` routing override (treatment variant). Must be a value between `0` and `1`.
+</ParamField>
+
+<ParamField body="treatmentConfig" type="object" required>
+  Configuration for the treatment variant. Must include a `gatewayOrderOverride` key with an array of gateway name strings specifying the desired routing priority order.
+
+  ```json
+  {
+    "gatewayOrderOverride": ["cashfree", "razorpay", "payu", "juspay"]
+  }
+  ```
+</ParamField>
+
+<ParamField body="targetMethods" type="string[]" required>
+  An array of payment method strings that this experiment applies to. Only traffic for these methods participates in the experiment. Supported values: `"UPI"`, `"CARD"`, `"NETBANKING"`, `"WALLET"`.
+</ParamField>
+
+<ParamField body="startsAt" type="string (ISO 8601)">
+  Optional. The datetime at which the experiment should become active. If omitted, the experiment starts immediately upon creation (subject to a status change from `DRAFT` to `ACTIVE`).
+</ParamField>
+
+<ParamField body="endsAt" type="string (ISO 8601)">
+  Optional. The datetime at which the experiment should automatically conclude. If omitted, the experiment runs until you manually pause or complete it.
+</ParamField>
+
+<ParamField body="guardrailConfig" type="object">
+  Optional. A JSON object defining safety thresholds. If the treatment variant's success rate drops below a configured threshold, the system can automatically pause the experiment. The exact structure is flexible and evaluated by your guardrail logic.
+
+  ```json
+  {
+    "minSuccessRate": 0.90,
+    "evaluationWindowMinutes": 10
+  }
+  ```
+</ParamField>
+
+## Example Request
+
+```bash
+curl -X POST http://localhost:3002/experiments \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Api-Key: dev-internal-key-change-in-prod" \
+  -d '{
+    "name": "Cashfree first for UPI",
+    "controlWeight": 0.5,
+    "treatmentWeight": 0.5,
+    "treatmentConfig": {
+      "gatewayOrderOverride": ["cashfree", "razorpay", "payu", "juspay"]
+    },
+    "targetMethods": ["UPI"],
+    "startsAt": "2024-11-15T12:00:00.000Z",
+    "endsAt": "2024-11-22T12:00:00.000Z"
+  }'
+```
+
+## Response
+
+On success, the endpoint returns `201 Created` with the full experiment object.
+
+```json
+{
+  "id": "e1a2b3c4-d5e6-7f89-ab01-cd23ef456789",
+  "name": "Cashfree first for UPI",
+  "status": "DRAFT",
+  "controlWeight": 0.5,
+  "treatmentWeight": 0.5,
+  "treatmentConfig": {
+    "gatewayOrderOverride": ["cashfree", "razorpay", "payu", "juspay"]
+  },
+  "targetMethods": ["UPI"],
+  "guardrailConfig": null,
+  "startsAt": "2024-11-15T12:00:00.000Z",
+  "endsAt": "2024-11-22T12:00:00.000Z",
+  "createdAt": "2024-11-15T10:30:00.000Z",
+  "updatedAt": "2024-11-15T10:30:00.000Z"
+}
+```
+
+## Errors
+
+| Status | Reason |
+|---|---|
+| `400 Bad Request` | Validation failed — check that `controlWeight` and `treatmentWeight` are valid numbers between 0 and 1, `treatmentConfig` is an object, and `targetMethods` is a non-empty array. |
+| `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or invalid. |

@@ -1,0 +1,107 @@
+---
+title: "GET /payments/{paymentId}/status-verification"
+sidebarTitle: "GET /status-verification"
+description: "Check the async verification status for a payment stuck in PENDING_VERIFICATION — returns the current status and the timestamp when verification resolved."
+---
+
+The `GET /payments/{paymentId}/status-verification` endpoint is used for payments that are in the `PENDING_VERIFICATION` state. When a gateway call times out, the orchestrator cannot immediately determine whether the payment succeeded or failed on the gateway's side. Rather than leaving the payment in an unknown state, the system queues an asynchronous verification job that contacts the gateway out-of-band to confirm the final outcome. This endpoint lets you poll for the result of that verification without having to fetch the full payment record.
+
+<Note>
+  **What is `PENDING_VERIFICATION`?** A payment enters this state when a gateway attempt times out — the request was sent, but no confirmation arrived within the allowed window. At this point the payment's final status is genuinely unknown: the gateway may have processed it successfully or it may have silently failed. The orchestrator queues an async verification job to resolve this ambiguity. Until `verifiedAt` is set on the response, the payment is still being verified. Once `verifiedAt` is populated, the `status` field will have been updated to either `SUCCESS` or `FAILED`.
+</Note>
+
+---
+
+## Endpoint
+
+```
+GET http://localhost:3000/payments/{paymentId}/status-verification
+```
+
+---
+
+## Path Parameters
+
+<ParamField path="paymentId" type="string" required>
+  The UUID of the payment you want to check verification status for.
+</ParamField>
+
+---
+
+## Example Request
+
+```bash
+curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/status-verification
+```
+
+---
+
+## Response Fields
+
+<ResponseField name="paymentId" type="string">
+  The UUID of the payment being verified.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  The current payment status. Will be `PENDING_VERIFICATION` while the async job is running. Transitions to `SUCCESS` or `FAILED` once verification completes.
+</ResponseField>
+
+<ResponseField name="verifiedAt" type="datetime | null">
+  The ISO 8601 timestamp at which the async verification job resolved the payment's final status. `null` if verification has not yet completed.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  A human-readable description of the current verification state.
+</ResponseField>
+
+---
+
+## Example Responses
+
+<Tabs>
+  <Tab title="Still Pending">
+    ```json
+    {
+      "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
+      "status": "PENDING_VERIFICATION",
+      "verifiedAt": null,
+      "message": "Payment is awaiting async verification"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Verified (Success)">
+    ```json
+    {
+      "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
+      "status": "SUCCESS",
+      "verifiedAt": "2025-01-15T10:24:02.317Z",
+      "message": "Payment verified successfully by gateway"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Verified (Failed)">
+    ```json
+    {
+      "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
+      "status": "FAILED",
+      "verifiedAt": "2025-01-15T10:24:05.891Z",
+      "message": "Payment verification confirmed failure"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  Poll this endpoint using **exponential backoff** rather than a fixed interval. Verification typically completes within a few seconds, but can take longer during periods of high load or when the gateway itself is slow to respond. A reasonable polling strategy is to start with a 1-second delay and double it on each retry, up to a maximum of 30 seconds.
+</Tip>
+
+---
+
+## Error Responses
+
+| HTTP Status | Cause                                                              |
+| ----------- | ------------------------------------------------------------------ |
+| `400`       | The `paymentId` path parameter is not a valid UUID format.         |
+| `404`       | No payment exists with the given `paymentId`.                      |

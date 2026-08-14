@@ -1,0 +1,130 @@
+---
+title: "Gateway Routing: How Payments Are Scored and Sent"
+sidebarTitle: "Gateway Routing"
+description: "Learn how the multi-factor scoring algorithm ranks payment gateways in real time and determines the order in which they are tried for each payment."
+---
+
+Before any payment reaches a gateway, the orchestrator runs every eligible gateway through a scoring algorithm and produces a ranked list of candidates. The gateway at the top of the list is attempted first; if it fails with a retryable error, the next gateway is tried, and so on. This page explains exactly how that ranking is calculated, what stops routing, and how you can inspect the live scores for any payment context.
+
+## The Scoring Algorithm
+
+Each gateway receives a composite score between 0 and 100. The score is computed from six independent factors, each multiplied by its weight and summed. The formula is:
+
+```
+score = (successScore × 0.35)
+      + (latencyScore × 0.25)
+      + (methodScore  × 0.15)
+      + (bankScore    × 0.12)
+      + (amountScore  × 0.08)
+      + (timeScore    × 0.05)
+```
+
+### Scoring Factors
+
+| Factor | Weight | Description |
+|---|---|---|
+| **Success Rate** | 35% | The gateway's rolling success rate over the last 5 minutes, read from real-time Redis metrics. Falls back to the gateway's configured baseline if no recent data is available. |
+| **Latency** | 25% | The p95 response latency over the last 5 minutes. Lower latency yields a higher score. The score is calculated as `max(0, 100 − p95ms / 30)`. Falls back to the gateway's configured base latency. |
+| **Method Affinity** | 15% | The gateway's historical performance specifically for the requested payment method: `UPI`, `CARD`, `NETBANKING`, or `WALLET`. Gateways optimised for a given method receive higher scores on that method. |
+| **Bank Affinity** | 12% | The gateway's historical performance for the specific bank involved (e.g., `HDFC`, `ICICI`). If no bank is provided in the request, this factor defaults to a neutral score of 50. |
+| **Amount Fit** | 8% | Gateways are scored differently depending on the transaction size: small (under ₹500), medium (₹500–₹10,000), or large (over ₹10,000). Each gateway has a configured tier preference, so you get the best gateway for your transaction value. |
+| **Time of Day** | 5% | Some gateways have known performance degradations at certain hours. A time-based penalty can reduce their score during those windows, steering traffic away automatically. |
+
+---
+
+## Circuit-Broken Gateways Are Skipped
+
+After the ranked list is produced, any gateway whose circuit breaker is in the `OPEN` or `HALF_OPEN` state is evaluated for eligibility. A gateway in `OPEN` state is skipped entirely. A gateway in `HALF_OPEN` state allows only a small fraction of probe traffic through (10% by default). See [Circuit Breaker](/concepts/circuit-breaker) for details on how those states are managed.
+
+---
+
+## Experiment-Driven Ordering Overrides
+
+If the customer is assigned to a treatment arm of an active experiment, the scored gateway order can be overridden by a `gatewayOrderOverride` list configured in the experiment's treatment config. When an override is active, gateways are sorted according to the override list first; gateways not in the override list are appended at the end, sorted by their computed score.
+
+<Info>
+  Experiment-based overrides are applied after scoring and after circuit breaker filtering, so circuit-broken gateways are still skipped even when an override is in effect.
+</Info>
+
+---
+
+## When Routing Stops
+
+The orchestrator stops trying gateways as soon as any of the following conditions is met:
+
+1. **A gateway succeeds** — the payment is marked `SUCCESS`.
+2. **A non-retryable error is returned** — the payment is marked `FAILED` immediately.
+3. **A gateway times out** — the payment moves to `PENDING_VERIFICATION`; no further gateways are tried.
+4. **`maxAttempts` is reached** — the merchant's retry policy caps the number of gateway attempts.
+5. **`latencyBudgetMs` is exhausted** — if the total elapsed time for all attempts exceeds the merchant's latency budget, routing stops even if attempts remain.
+
+---
+
+## Debugging Live Gateway Rankings
+
+<Tip>
+  Use `GET /scoring/debug` to inspect the real-time ranked gateway list for any combination of payment method, bank, and amount — without creating an actual payment. This is invaluable for understanding why a specific gateway was (or was not) chosen.
+</Tip>
+
+```bash
+GET /scoring/debug?method=UPI&bank=HDFC&amountMinor=33000
+```
+
+Example response:
+
+```json
+[
+  {
+    "gateway": {
+      "name": "razorpay",
+      "supportedMethods": ["UPI", "CARD", "NETBANKING", "WALLET"]
+    },
+    "score": 82.47,
+    "factors": {
+      "successScore": 94.00,
+      "latencyScore": 78.33,
+      "methodScore": 85.00,
+      "bankScore": 90.00,
+      "amountScore": 70.00,
+      "timeScore": 50.00
+    }
+  },
+  {
+    "gateway": {
+      "name": "cashfree",
+      "supportedMethods": ["UPI", "CARD", "NETBANKING"]
+    },
+    "score": 74.12,
+    "factors": {
+      "successScore": 88.00,
+      "latencyScore": 65.00,
+      "methodScore": 80.00,
+      "bankScore": 75.00,
+      "amountScore": 60.00,
+      "timeScore": 45.00
+    }
+  }
+]
+```
+
+Each entry in the response shows the final composite `score` alongside all six individual factor scores, so you can see exactly which dimension is driving a gateway's ranking up or down.
+
+---
+
+## Merchant Retry Policies
+
+You can configure `maxAttempts` and `latencyBudgetMs` per merchant to tune how aggressively the router retries before giving up:
+
+```bash
+PUT /retry-policy/{merchantId}
+```
+
+```json
+{
+  "maxAttempts": 5,
+  "latencyBudgetMs": 15000,
+  "retryOnTimeout": false
+}
+```
+
+Retrieve existing policies with `GET /retry-policy/{merchantId}`.

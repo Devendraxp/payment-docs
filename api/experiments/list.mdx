@@ -1,0 +1,121 @@
+---
+title: "GET /experiments — List All Experiments"
+sidebarTitle: "GET /experiments"
+description: "List all A/B routing experiments and their current status, including control and treatment weights, target methods, and scheduling information."
+---
+
+The `GET /experiments` endpoint returns every experiment that has been created, regardless of its current status. You can use this endpoint to audit which experiments are running, review their configurations, and check on experiment lifecycle states. The response is an array of experiment objects ordered by creation time. No authentication is required to list experiments.
+
+## Endpoint
+
+```
+GET http://localhost:3002/experiments
+```
+
+## Request
+
+This endpoint accepts no query parameters or request body.
+
+## Example Request
+
+```bash
+curl http://localhost:3002/experiments
+```
+
+## Response Fields
+
+The response is a JSON array. Each element represents one experiment.
+
+<ResponseField name="id" type="string (UUID)">
+  The unique identifier for the experiment, assigned automatically at creation.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  The human-readable name given to the experiment when it was created.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  The current lifecycle state of the experiment. One of:
+  - `DRAFT` — created but not yet active
+  - `ACTIVE` — currently running and assigning traffic
+  - `PAUSED` — temporarily halted; no new assignments are made
+  - `COMPLETED` — concluded; results are available
+</ResponseField>
+
+<ResponseField name="controlWeight" type="number">
+  The fraction of traffic receiving the default routing logic, as a decimal between `0` and `1`.
+</ResponseField>
+
+<ResponseField name="treatmentWeight" type="number">
+  The fraction of traffic receiving the treatment routing override, as a decimal between `0` and `1`.
+</ResponseField>
+
+<ResponseField name="treatmentConfig" type="object">
+  The treatment configuration object, including the `gatewayOrderOverride` array that defines the alternative routing priority.
+</ResponseField>
+
+<ResponseField name="targetMethods" type="string[]">
+  The payment methods this experiment applies to (e.g., `["UPI"]`, `["CARD", "NETBANKING"]`).
+</ResponseField>
+
+<ResponseField name="guardrailConfig" type="object | null">
+  Safety threshold configuration, or `null` if no guardrails were set.
+</ResponseField>
+
+<ResponseField name="startsAt" type="string (datetime) | null">
+  The scheduled start time of the experiment in ISO 8601 format, or `null` if not scheduled.
+</ResponseField>
+
+<ResponseField name="endsAt" type="string (datetime) | null">
+  The scheduled end time of the experiment in ISO 8601 format, or `null` if no end time was set.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string (datetime)">
+  ISO 8601 timestamp of when the experiment was first created.
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string (datetime)">
+  ISO 8601 timestamp of the most recent update to this experiment record.
+</ResponseField>
+
+## Example Response
+
+```json
+[
+  {
+    "id": "e1a2b3c4-d5e6-7f89-ab01-cd23ef456789",
+    "name": "Cashfree first for UPI",
+    "status": "ACTIVE",
+    "controlWeight": 0.5,
+    "treatmentWeight": 0.5,
+    "treatmentConfig": {
+      "gatewayOrderOverride": ["cashfree", "razorpay", "payu", "juspay"]
+    },
+    "targetMethods": ["UPI"],
+    "guardrailConfig": null,
+    "startsAt": "2024-11-15T12:00:00.000Z",
+    "endsAt": "2024-11-22T12:00:00.000Z",
+    "createdAt": "2024-11-15T10:30:00.000Z",
+    "updatedAt": "2024-11-15T12:00:00.000Z"
+  },
+  {
+    "id": "f2b3c4d5-e6f7-8a90-bc12-de34fg567890",
+    "name": "PayU first treatment only",
+    "status": "COMPLETED",
+    "controlWeight": 0,
+    "treatmentWeight": 1,
+    "treatmentConfig": {
+      "gatewayOrderOverride": ["payu", "cashfree", "razorpay", "juspay"]
+    },
+    "targetMethods": ["UPI"],
+    "guardrailConfig": {
+      "minSuccessRate": 0.90,
+      "evaluationWindowMinutes": 10
+    },
+    "startsAt": "2024-11-10T00:00:00.000Z",
+    "endsAt": "2024-11-14T00:00:00.000Z",
+    "createdAt": "2024-11-09T15:00:00.000Z",
+    "updatedAt": "2024-11-14T00:00:01.000Z"
+  }
+]
+```

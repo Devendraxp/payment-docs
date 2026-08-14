@@ -1,0 +1,154 @@
+---
+title: "GET /payments/{paymentId}/routing-decision"
+sidebarTitle: "GET /routing-decision"
+description: "Retrieve the stored routing decision for a payment, including the ranked gateway list, composite scores, and the reason for the final routing outcome."
+---
+
+The `GET /payments/{paymentId}/routing-decision` endpoint returns the gateway selection decision that was recorded at the moment the payment was processed. The routing engine evaluates every available gateway against a set of scoring factors — historical success rate, latency, payment method compatibility, bank affinity, amount range, and time-of-day patterns — then ranks them from most to least preferred. The orchestrator works down that ranked list until a gateway succeeds or all options are exhausted. This endpoint lets you audit exactly how and why a particular gateway was chosen.
+
+<Note>
+  The routing decision is a **snapshot** captured at payment creation time. Gateway scores are recalculated continuously as new payment data arrives, so the scores stored here may differ from current live scores. Use this endpoint for historical auditing, not for predicting future routing behaviour.
+</Note>
+
+---
+
+## Endpoint
+
+```
+GET http://localhost:3000/payments/{paymentId}/routing-decision
+```
+
+---
+
+## Path Parameters
+
+<ParamField path="paymentId" type="string" required>
+  The UUID of the payment whose routing decision you want to inspect.
+</ParamField>
+
+---
+
+## Example Request
+
+```bash
+curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/routing-decision
+```
+
+---
+
+## Response Fields
+
+<ResponseField name="paymentId" type="string">
+  The UUID of the payment this routing decision belongs to.
+</ResponseField>
+
+<ResponseField name="rankedGateways" type="array">
+  The ordered list of gateways as ranked by the routing engine at payment time. The orchestrator tries gateways from index `0` downward.
+
+  <Expandable title="Gateway ranking object">
+    <ResponseField name="gatewayName" type="string">
+      The name of the gateway (for example, `RAZORPAY`, `PAYU`, `CASHFREE`).
+    </ResponseField>
+
+    <ResponseField name="score" type="number">
+      The composite score assigned to this gateway for this payment, as a decimal between `0` and `1`. Higher scores indicate a stronger preference.
+    </ResponseField>
+
+    <ResponseField name="factors" type="object">
+      The individual factor scores that were combined to produce the composite score.
+
+      <Expandable title="Factor scores">
+        <ResponseField name="successScore" type="number">
+          Score based on the gateway's recent payment success rate.
+        </ResponseField>
+
+        <ResponseField name="latencyScore" type="number">
+          Score based on the gateway's recent average response latency. Lower latency produces a higher score.
+        </ResponseField>
+
+        <ResponseField name="methodScore" type="number">
+          Score based on how well this gateway historically performs for the payment method (UPI, CARD, etc.) used in this payment.
+        </ResponseField>
+
+        <ResponseField name="bankScore" type="number">
+          Score based on the gateway's success rate with the specific bank in the instrument.
+        </ResponseField>
+
+        <ResponseField name="amountScore" type="number">
+          Score based on the gateway's success rate for payments in a similar amount range.
+        </ResponseField>
+
+        <ResponseField name="timeScore" type="number">
+          Score based on the gateway's historical performance at the current time of day and day of week.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="routingReason" type="string">
+  A human-readable explanation of the final routing outcome — for example, why a lower-ranked gateway was ultimately selected if the top-ranked gateway failed.
+</ResponseField>
+
+<ResponseField name="createdAt" type="datetime">
+  ISO 8601 timestamp of when this routing decision was recorded.
+</ResponseField>
+
+---
+
+## Example Response
+
+```json
+{
+  "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
+  "rankedGateways": [
+    {
+      "gatewayName": "RAZORPAY",
+      "score": 0.87,
+      "factors": {
+        "successScore": 0.92,
+        "latencyScore": 0.85,
+        "methodScore": 0.88,
+        "bankScore": 0.91,
+        "amountScore": 0.79,
+        "timeScore": 0.83
+      }
+    },
+    {
+      "gatewayName": "PAYU",
+      "score": 0.73,
+      "factors": {
+        "successScore": 0.78,
+        "latencyScore": 0.70,
+        "methodScore": 0.74,
+        "bankScore": 0.68,
+        "amountScore": 0.81,
+        "timeScore": 0.75
+      }
+    },
+    {
+      "gatewayName": "CASHFREE",
+      "score": 0.61,
+      "factors": {
+        "successScore": 0.65,
+        "latencyScore": 0.60,
+        "methodScore": 0.58,
+        "bankScore": 0.62,
+        "amountScore": 0.66,
+        "timeScore": 0.55
+      }
+    }
+  ],
+  "routingReason": "RAZORPAY selected as top-ranked gateway with highest composite score",
+  "createdAt": "2025-01-15T10:23:45.050Z"
+}
+```
+
+---
+
+## Error Responses
+
+| HTTP Status | Cause                                                              |
+| ----------- | ------------------------------------------------------------------ |
+| `400`       | The `paymentId` path parameter is not a valid UUID format.         |
+| `404`       | No payment or routing decision exists for the given `paymentId`.   |

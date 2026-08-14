@@ -1,47 +1,123 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Payment Gateway in 5 Minutes"
+sidebarTitle: "Quickstart"
+description: "Verify the service is running, create your first UPI payment, and retrieve its status and gateway attempts in just four steps."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+This guide walks you through everything you need to send your first payment request and interpret the response. By the end you will have created a UPI payment, confirmed its status, and inspected which gateway processed it.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+<Note>
+  All examples use `curl`. You can use any HTTP client — the API accepts and returns standard JSON.
+</Note>
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+
+  <Step title="Verify the service is running">
+    Before sending a payment, confirm the Payment Orchestrator and its dependencies are healthy by hitting the readiness endpoint.
 
     ```bash
-    npm install your-package
+    curl http://localhost:3000/ops/readiness
     ```
+
+    A healthy service returns HTTP `200` with a JSON body indicating that the database and Redis connections are up:
+
+    ```json
+    {
+      "status": "ok",
+      "details": {
+        "database": { "status": "up" },
+        "redis": { "status": "up" }
+      }
+    }
+    ```
+
+    If any dependency reports `"status": "down"`, the service is not ready to accept payments. Check that all backing services have started before proceeding.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Create a UPI payment">
+    Send a `POST /payments` request with a unique `idempotency-key` header and a JSON body describing the payment. The example below creates a ₹330.00 UPI payment on behalf of merchant `amazon`.
 
     ```bash
-    your-cli init
+    curl -X POST http://localhost:3000/payments \
+      -H "Content-Type: application/json" \
+      -H "idempotency-key: pay-upi-001" \
+      -d '{
+        "merchantId": "amazon",
+        "customerId": "cust_001",
+        "amountMinor": 33000,
+        "paymentMethod": "UPI",
+        "instrument": { "vpa": "user@paytm", "bank": "HDFC" }
+      }'
     ```
+
+    <Note>
+      `amountMinor` is expressed in the **smallest currency unit**. For INR that is paise, so `33000` equals ₹330.00. Always convert your rupee amount by multiplying by 100 before sending the request.
+    </Note>
+
+    The orchestrator scores all available gateways, routes the payment to the top-ranked healthy candidate, and returns the result synchronously:
+
+    ```json
+    {
+      "paymentId": "a3f2c1d4-8b5e-4f7a-9c0e-1d2b3e4f5a6b",
+      "status": "SUCCESS",
+      "finalGateway": "razorpay",
+      "totalAttempts": 1,
+      "totalLatencyMs": 342,
+      "message": "Payment completed successfully"
+    }
+    ```
+
+    | Field | Description |
+    |---|---|
+    | `paymentId` | UUID that uniquely identifies this payment. Use it for all subsequent lookups. |
+    | `status` | Final status: `SUCCESS`, `FAILED`, or `PENDING_VERIFICATION`. |
+    | `finalGateway` | The gateway that ultimately processed the payment. |
+    | `totalAttempts` | Total number of gateway attempts made, including retries. |
+    | `totalLatencyMs` | End-to-end wall-clock time for the payment in milliseconds. |
+    | `message` | Human-readable outcome description. |
+
+    If the payment lands in `PENDING_VERIFICATION`, the gateway timed out and the outcome is being resolved asynchronously. Poll `GET /payments/{paymentId}` until the status transitions to `SUCCESS` or `FAILED`.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Retrieve the payment">
+    Use the `paymentId` from the previous response to fetch the full payment record at any time.
 
     ```bash
-    your-cli start
+    curl http://localhost:3000/payments/a3f2c1d4-8b5e-4f7a-9c0e-1d2b3e4f5a6b
     ```
+
+    The response contains the payment details including its current status, the merchant and customer identifiers, the requested amount, and the chosen payment method.
   </Step>
+
+  <Step title="Inspect gateway attempts">
+    Retrieve the ordered list of gateway attempts to see exactly which gateways were tried, in which order, and what outcome each attempt produced.
+
+    ```bash
+    curl http://localhost:3000/payments/a3f2c1d4-8b5e-4f7a-9c0e-1d2b3e4f5a6b/attempts
+    ```
+
+    Each item in the response array includes the gateway name, attempt status, latency, and any error code returned by the gateway. When retries occur, you will see multiple attempts with earlier entries showing failure reasons and the final entry showing `SUCCESS`.
+  </Step>
+
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Idempotency
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+Every `POST /payments` call **must** include an `idempotency-key` header. The key must be a unique string up to 128 characters that you generate on your side (a UUID or a meaningful reference such as `order-7842-payment-1` both work).
+
+<Note>
+  If you omit the `idempotency-key` header the API returns `400 Bad Request` with the message `"idempotency-key header is required"`. The request will not be processed.
+</Note>
+
+Submitting the same key with the same request body within 24 hours returns the cached response immediately — no duplicate charge is made. Submitting the same key with a **different** body returns `409 Conflict`, protecting you from accidentally reusing a key across different orders.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Create Payment Guide" icon="credit-card" href="/guides/create-payment">
+    Explore all supported payment methods, instrument shapes, and field validations.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/payments/create">
+    Browse the full endpoint catalogue with request and response schemas.
+  </Card>
+</CardGroup>

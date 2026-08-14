@@ -1,0 +1,89 @@
+---
+title: "GET /retry-policy/{merchantId} — Get Merchant Policy"
+sidebarTitle: "GET /retry-policy/:id"
+description: "Retrieve the retry policy for a specific merchant by their merchantId. Returns the default policy if no custom policy has been configured. Requires the internal API key."
+---
+
+The `GET /retry-policy/{merchantId}` endpoint retrieves the retry policy the orchestrator applies when processing payments for a specific merchant. Use this endpoint to inspect the current settings for a merchant before modifying them, or to verify that an upsert took effect correctly.
+
+<Warning>
+  This endpoint requires the `X-Internal-Api-Key` header. Requests that omit the header or supply an invalid key receive a `401 Unauthorized` response.
+</Warning>
+
+## Endpoint
+
+```
+GET http://localhost:3000/retry-policy/{merchantId}
+```
+
+## Path Parameters
+
+<ParamField path="merchantId" type="string" required>
+  The unique merchant identifier whose retry policy you want to retrieve (e.g., `"amazon"`, `"swiggy"`). This value is case-sensitive and must match the identifier used when the policy was created.
+</ParamField>
+
+## Example Request
+
+```bash
+curl http://localhost:3000/retry-policy/amazon \
+  -H "X-Internal-Api-Key: your-api-key"
+```
+
+<Note>
+  If no custom retry policy has been configured for the requested merchant, the orchestrator returns the system-wide default policy rather than a `404` error. Check the `merchantId` field in the response to confirm whether the returned policy is merchant-specific or the platform default.
+</Note>
+
+## Response
+
+<ResponseField name="id" type="string" required>
+  Unique UUID for the retry policy record.
+</ResponseField>
+
+<ResponseField name="merchantId" type="string" required>
+  The merchant this policy applies to.
+</ResponseField>
+
+<ResponseField name="maxAttempts" type="integer" required>
+  Maximum number of gateway attempts allowed per payment, including the initial attempt.
+</ResponseField>
+
+<ResponseField name="latencyBudgetMs" type="integer" required>
+  Total millisecond budget across all attempts for a single payment. Retrying stops when cumulative latency exceeds this value, even if `maxAttempts` has not been reached.
+</ResponseField>
+
+<ResponseField name="retryOnTimeout" type="boolean" required>
+  Whether a gateway timeout triggers a retry on the next ranked gateway.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean" required>
+  Whether this policy is currently active. When `false`, the platform default policy is used instead.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+  ISO 8601 datetime when this policy was first created.
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string" required>
+  ISO 8601 datetime when this policy was last modified.
+</ResponseField>
+
+## Example Response
+
+```json
+{
+  "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+  "merchantId": "amazon",
+  "maxAttempts": 3,
+  "latencyBudgetMs": 10000,
+  "retryOnTimeout": true,
+  "enabled": true,
+  "createdAt": "2024-06-01T08:00:00.000Z",
+  "updatedAt": "2024-06-10T14:22:31.000Z"
+}
+```
+
+## Error Responses
+
+| Status | Description |
+|--------|-------------|
+| `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or contains an invalid key. |

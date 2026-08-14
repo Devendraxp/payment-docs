@@ -1,0 +1,88 @@
+---
+title: "GET /bandit/state/{segment} — Bandit State per Segment"
+sidebarTitle: "GET /bandit/state"
+description: "Inspect Thompson Sampling alpha and beta parameters for every gateway in a payment segment to understand current bandit beliefs about gateway performance."
+---
+
+The `/bandit/state/{segment}` endpoint returns the current Thompson Sampling state for all gateways tracked within a given payment segment (typically a payment method such as `UPI` or `CARD`). Each gateway is modelled as a Beta distribution parameterised by `alpha` (accumulated successes + 1) and `beta` (accumulated failures + 1). Inspecting this state lets you understand which gateways the bandit currently favours and why. No authentication is required.
+
+## Endpoint
+
+```
+GET http://localhost:3002/bandit/state/{segment}
+```
+
+## Path Parameters
+
+<ParamField path="segment" type="string" required>
+  The payment segment whose bandit state you want to inspect. This is typically the uppercased payment method — for example, `UPI`, `CARD`, `NETBANKING`, or `WALLET`. The bandit maintains an independent set of Beta distribution parameters per segment, so `UPI` and `CARD` have entirely separate states.
+</ParamField>
+
+## Example Request
+
+```bash
+curl http://localhost:3002/bandit/state/UPI
+```
+
+## Response Fields
+
+The response is a JSON object keyed by gateway name. Each value is the bandit state for that gateway in the requested segment.
+
+<ResponseField name="[gatewayName]" type="object">
+  Bandit state for a single gateway within the segment.
+
+  <Expandable title="gateway state fields">
+    <ResponseField name="gatewayName" type="string">
+      The name of the gateway this state belongs to (e.g., `"razorpay"`).
+    </ResponseField>
+
+    <ResponseField name="alpha" type="number">
+      The alpha parameter of the Beta distribution. Starts at `1` and increments by `1` for each successful payment through this gateway in this segment. A higher `alpha` relative to `beta` indicates a better-performing gateway.
+    </ResponseField>
+
+    <ResponseField name="beta" type="number">
+      The beta parameter of the Beta distribution. Starts at `1` and increments by `1` for each failed or timed-out payment through this gateway in this segment. A higher `beta` relative to `alpha` indicates a worse-performing gateway.
+    </ResponseField>
+
+    <ResponseField name="totalSamples" type="integer">
+      The total number of payment outcomes (successes + failures) that have been fed into this gateway's bandit state. New gateways start at `0`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Response
+
+```json
+{
+  "razorpay": {
+    "gatewayName": "razorpay",
+    "alpha": 1847,
+    "beta": 103,
+    "totalSamples": 1949
+  },
+  "cashfree": {
+    "gatewayName": "cashfree",
+    "alpha": 1621,
+    "beta": 79,
+    "totalSamples": 1700
+  },
+  "payu": {
+    "gatewayName": "payu",
+    "alpha": 934,
+    "beta": 121,
+    "totalSamples": 1055
+  },
+  "juspay": {
+    "gatewayName": "juspay",
+    "alpha": 412,
+    "beta": 58,
+    "totalSamples": 470
+  }
+}
+```
+
+You can derive the estimated success probability for a gateway as `alpha / (alpha + beta)`. For example, `razorpay` in the response above has an estimated success rate of `1847 / (1847 + 103) ≈ 0.947`.
+
+<Note>
+  **How Thompson Sampling works:** when the bandit needs to order gateways for a routing decision, it draws a random sample from each gateway's `Beta(alpha, beta)` distribution. The gateway with the highest sampled value is placed first, the next highest second, and so on. Because a gateway with a large `alpha` and small `beta` has a distribution concentrated near `1.0`, it will almost always sample near the top — but the randomness means occasionally a lower-confidence gateway gets a chance to prove itself, enabling ongoing exploration. Over time, consistently high-performing gateways accumulate higher `alpha` values and are ordered first more and more reliably.
+</Note>

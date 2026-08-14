@@ -1,0 +1,50 @@
+---
+title: "POST /circuit-breaker/force-close — Close a Circuit"
+sidebarTitle: "Force Close"
+description: "Immediately force a gateway-method circuit to the CLOSED state, restoring it to healthy routing. Use this after resolving an incident or after testing with force-open."
+---
+
+The `POST /circuit-breaker/force-close/{gatewayName}/{method}` endpoint immediately transitions a gateway-method circuit to the `CLOSED` state, marking it as healthy and restoring it to normal routing. You would typically call this endpoint after resolving an incident that prompted a forced-open, or after finishing a failover test that required temporarily removing a gateway from the routing pool. The change takes effect immediately — the orchestrator includes the gateway in subsequent routing decisions without waiting for the automatic half-open probe cycle to complete.
+
+<Warning>
+  This endpoint requires the `X-Internal-Api-Key` header. Requests that omit the header or supply an invalid key receive a `401 Unauthorized` response. Closing a circuit for a gateway that is still experiencing issues will expose your customers to elevated failure rates. Confirm that the underlying problem is fully resolved before calling this endpoint in production.
+</Warning>
+
+## Endpoint
+
+```
+POST http://localhost:3000/circuit-breaker/force-close/{gatewayName}/{method}
+```
+
+## Path Parameters
+
+<ParamField path="gatewayName" type="string" required>
+  The internal name of the gateway whose circuit you want to close (e.g., `razorpay`, `cashfree`, `payu`, `juspay`, `hdfc_gateway`).
+</ParamField>
+
+<ParamField path="method" type="string" required>
+  The payment method leg of the circuit to close. Must be one of `UPI`, `CARD`, `NETBANKING`, or `WALLET`. The value is normalised to uppercase automatically.
+</ParamField>
+
+## Example Request
+
+```bash
+curl -X POST http://localhost:3000/circuit-breaker/force-close/razorpay/UPI \
+  -H "X-Internal-Api-Key: your-api-key"
+```
+
+## Response
+
+```json
+{
+  "status": "CLOSED",
+  "gatewayName": "razorpay",
+  "method": "UPI"
+}
+```
+
+## Error Responses
+
+| Status | Description |
+|--------|-------------|
+| `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or contains an invalid key. |
