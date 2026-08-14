@@ -1,10 +1,10 @@
 ---
-title: "GET /metrics/gateways/{name}/{method} — Method Metrics"
-sidebarTitle: "GET /metrics/:name/:method"
-description: "Retrieve rolling hot metrics for a specific gateway, optionally filtered to a single payment method like UPI, CARD, NETBANKING, or WALLET."
+title: "GET /metrics/gateways/{name} — Gateway Method Metrics"
+sidebarTitle: "Gateway Methods"
+description: "Retrieve rolling hot metrics for a single gateway across all payment methods, or narrow to one method like UPI, CARD, NETBANKING, or WALLET."
 ---
 
-The metrics service exposes two scoped endpoints that let you drill into the performance of a single gateway. You can either fetch metrics for all payment methods on a gateway at once, or narrow your request to a specific method such as `UPI` or `CARD`. Both endpoints read from Redis hot-metric hashes and return the same rolling window statistics as the all-gateways endpoint, just scoped to the resource you specify. No authentication is required.
+The metrics service exposes two scoped endpoints that let you drill into the performance of a single gateway. You can either fetch metrics for all payment methods on a gateway at once, or narrow your request to a specific method such as `UPI` or `CARD`. Both endpoints return the same rolling-window statistics as the all-gateways endpoint, just scoped to the resource you specify. No authentication is required.
 
 ## Endpoints
 
@@ -46,7 +46,7 @@ curl http://localhost:3001/metrics/gateways/razorpay/UPI
 </ResponseField>
 
 <ResponseField name="methods" type="object">
-  A map of payment method names to their metric objects (same structure as the single-method `metrics` field below).
+  A map of payment method names to their metric objects. Each method object has the same structure as the `metrics` field described below.
 </ResponseField>
 
 ### Single-method response (`/metrics/gateways/{gatewayName}/{method}`)
@@ -56,27 +56,47 @@ curl http://localhost:3001/metrics/gateways/razorpay/UPI
 </ResponseField>
 
 <ResponseField name="method" type="string">
-  The uppercased payment method name.
+  The uppercased payment method name (e.g., `"UPI"` even if you passed `"upi"`).
 </ResponseField>
 
 <ResponseField name="metrics" type="object">
-  The hot metric hash for this gateway + method combination.
+  The hot metric data for this gateway and method combination. Each field name is suffixed with the window duration: `_1m`, `_5m`, `_15m`, or `_60m`.
 
   <Expandable title="metrics fields">
-    <ResponseField name="success_rate_5m" type="number">
-      Rolling success rate over the last 5 minutes, as a value between `0` and `1`.
+    <ResponseField name="success_rate_{window}" type="number">
+      Rolling success rate over the window, as a decimal between `0` and `1`. Computed as `successCount / totalCount`; returns `0` when there are no attempts.
     </ResponseField>
 
-    <ResponseField name="p95_5m" type="number">
-      95th-percentile latency in milliseconds over the 5-minute window.
+    <ResponseField name="success_{window}" type="integer">
+      Number of payment attempts that returned a `SUCCESS` status within the window.
     </ResponseField>
 
-    <ResponseField name="attempts_5m" type="integer">
-      Total payment attempts in the last 5-minute window.
+    <ResponseField name="fail_{window}" type="integer">
+      Number of payment attempts that returned a `FAILED` status within the window.
+    </ResponseField>
+
+    <ResponseField name="timeout_{window}" type="integer">
+      Number of payment attempts that returned a `TIMEOUT` status within the window.
+    </ResponseField>
+
+    <ResponseField name="total_{window}" type="integer">
+      Total number of payment attempts within the window, including successes, failures, and timeouts.
+    </ResponseField>
+
+    <ResponseField name="p50_{window}" type="number">
+      50th-percentile (median) latency in milliseconds over the window.
+    </ResponseField>
+
+    <ResponseField name="p95_{window}" type="number">
+      95th-percentile latency in milliseconds over the window.
+    </ResponseField>
+
+    <ResponseField name="p99_{window}" type="number">
+      99th-percentile latency in milliseconds over the window.
     </ResponseField>
 
     <ResponseField name="last_updated" type="string">
-      ISO 8601 timestamp of the last time this metric hash was refreshed.
+      ISO 8601 timestamp of the last time this metric entry was updated.
     </ResponseField>
   </Expandable>
 </ResponseField>
@@ -90,18 +110,33 @@ curl http://localhost:3001/metrics/gateways/razorpay/UPI
   "gateway": "cashfree",
   "methods": {
     "UPI": {
-      "success_rate_5m": "0.9615",
-      "p95_5m": "285",
-      "attempts_5m": "130",
       "success_rate_1m": "0.9700",
+      "success_1m": "43",
+      "fail_1m": "1",
+      "timeout_1m": "0",
+      "total_1m": "44",
+      "p50_1m": "185",
       "p95_1m": "270",
-      "attempts_1m": "44",
+      "p99_1m": "310",
+      "success_rate_5m": "0.9615",
+      "success_5m": "125",
+      "fail_5m": "4",
+      "timeout_5m": "1",
+      "total_5m": "130",
+      "p50_5m": "195",
+      "p95_5m": "285",
+      "p99_5m": "330",
       "last_updated": "2024-11-15T10:23:46.789Z"
     },
     "NETBANKING": {
       "success_rate_5m": "0.9100",
+      "success_5m": "37",
+      "fail_5m": "3",
+      "timeout_5m": "1",
+      "total_5m": "41",
+      "p50_5m": "650",
       "p95_5m": "870",
-      "attempts_5m": "41",
+      "p99_5m": "950",
       "last_updated": "2024-11-15T10:23:40.555Z"
     }
   }
@@ -115,15 +150,38 @@ curl http://localhost:3001/metrics/gateways/razorpay/UPI
   "gateway": "razorpay",
   "method": "UPI",
   "metrics": {
-    "success_rate_5m": "0.9732",
-    "p95_5m": "312",
-    "attempts_5m": "149",
     "success_rate_1m": "0.9800",
+    "success_1m": "49",
+    "fail_1m": "1",
+    "timeout_1m": "0",
+    "total_1m": "50",
+    "p50_1m": "210",
     "p95_1m": "298",
-    "attempts_1m": "50",
+    "p99_1m": "340",
+    "success_rate_5m": "0.9732",
+    "success_5m": "145",
+    "fail_5m": "3",
+    "timeout_5m": "1",
+    "total_5m": "149",
+    "p50_5m": "225",
+    "p95_5m": "312",
+    "p99_5m": "380",
     "success_rate_15m": "0.9650",
+    "success_15m": "405",
+    "fail_15m": "12",
+    "timeout_15m": "3",
+    "total_15m": "420",
+    "p50_15m": "230",
     "p95_15m": "340",
-    "attempts_15m": "420",
+    "p99_15m": "410",
+    "success_rate_60m": "0.9601",
+    "success_60m": "1536",
+    "fail_60m": "54",
+    "timeout_60m": "10",
+    "total_60m": "1600",
+    "p50_60m": "235",
+    "p95_60m": "355",
+    "p99_60m": "430",
     "last_updated": "2024-11-15T10:23:45.123Z"
   }
 }

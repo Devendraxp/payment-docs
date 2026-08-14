@@ -1,5 +1,5 @@
 ---
-title: "Gateway Routing: How Payments Are Scored and Sent"
+title: "Gateway Routing: How Payments Are Scored and Routed"
 sidebarTitle: "Gateway Routing"
 description: "Learn how the multi-factor scoring algorithm ranks payment gateways in real time and determines the order in which they are tried for each payment."
 ---
@@ -23,18 +23,18 @@ score = (successScore × 0.35)
 
 | Factor | Weight | Description |
 |---|---|---|
-| **Success Rate** | 35% | The gateway's rolling success rate over the last 5 minutes, read from real-time Redis metrics. Falls back to the gateway's configured baseline if no recent data is available. |
+| **Success Rate** | 35% | The gateway's rolling success rate over the last 5 minutes. Falls back to the gateway's configured baseline if no recent data is available. |
 | **Latency** | 25% | The p95 response latency over the last 5 minutes. Lower latency yields a higher score. The score is calculated as `max(0, 100 − p95ms / 30)`. Falls back to the gateway's configured base latency. |
 | **Method Affinity** | 15% | The gateway's historical performance specifically for the requested payment method: `UPI`, `CARD`, `NETBANKING`, or `WALLET`. Gateways optimised for a given method receive higher scores on that method. |
 | **Bank Affinity** | 12% | The gateway's historical performance for the specific bank involved (e.g., `HDFC`, `ICICI`). If no bank is provided in the request, this factor defaults to a neutral score of 50. |
-| **Amount Fit** | 8% | Gateways are scored differently depending on the transaction size: small (under ₹500), medium (₹500–₹10,000), or large (over ₹10,000). Each gateway has a configured tier preference, so you get the best gateway for your transaction value. |
+| **Amount Fit** | 8% | Gateways are scored differently depending on the transaction size tier: **small** (`amountMinor` < 50,000), **medium** (50,000 ≤ `amountMinor` ≤ 1,000,000), or **large** (`amountMinor` > 1,000,000). Each gateway has a configured tier preference, so you get the best gateway for your transaction value. |
 | **Time of Day** | 5% | Some gateways have known performance degradations at certain hours. A time-based penalty can reduce their score during those windows, steering traffic away automatically. |
 
 ---
 
 ## Circuit-Broken Gateways Are Skipped
 
-After the ranked list is produced, any gateway whose circuit breaker is in the `OPEN` or `HALF_OPEN` state is evaluated for eligibility. A gateway in `OPEN` state is skipped entirely. A gateway in `HALF_OPEN` state allows only a small fraction of probe traffic through (10% by default). See [Circuit Breaker](/concepts/circuit-breaker) for details on how those states are managed.
+After the ranked list is produced, any gateway whose circuit breaker is in the `OPEN` or `HALF_OPEN` state is evaluated for eligibility. A gateway in `OPEN` state is skipped entirely. A gateway in `HALF_OPEN` state allows only a small fraction of probe traffic through (10%). See [Circuit Breaker](/concepts/circuit-breaker) for details on how those states are managed.
 
 ---
 

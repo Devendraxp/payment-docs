@@ -1,7 +1,7 @@
 ---
-title: "GET /payments/{paymentId}/status-verification"
+title: "GET /payments/{paymentId}/status-verification — Poll Status"
 sidebarTitle: "GET /status-verification"
-description: "Check the async verification status for a payment stuck in PENDING_VERIFICATION — returns the current status and the timestamp when verification resolved."
+description: "Poll async verification for a PENDING_VERIFICATION payment — returns the current status and the timestamp when the verification job resolved."
 ---
 
 The `GET /payments/{paymentId}/status-verification` endpoint is used for payments that are in the `PENDING_VERIFICATION` state. When a gateway call times out, the orchestrator cannot immediately determine whether the payment succeeded or failed on the gateway's side. Rather than leaving the payment in an unknown state, the system queues an asynchronous verification job that contacts the gateway out-of-band to confirm the final outcome. This endpoint lets you poll for the result of that verification without having to fetch the full payment record.
@@ -50,10 +50,6 @@ curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/status-
   The ISO 8601 timestamp at which the async verification job resolved the payment's final status. `null` if verification has not yet completed.
 </ResponseField>
 
-<ResponseField name="message" type="string">
-  A human-readable description of the current verification state.
-</ResponseField>
-
 ---
 
 ## Example Responses
@@ -64,8 +60,7 @@ curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/status-
     {
       "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
       "status": "PENDING_VERIFICATION",
-      "verifiedAt": null,
-      "message": "Payment is awaiting async verification"
+      "verifiedAt": null
     }
     ```
   </Tab>
@@ -75,8 +70,7 @@ curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/status-
     {
       "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
       "status": "SUCCESS",
-      "verifiedAt": "2025-01-15T10:24:02.317Z",
-      "message": "Payment verified successfully by gateway"
+      "verifiedAt": "2025-01-15T10:24:02.317Z"
     }
     ```
   </Tab>
@@ -86,8 +80,7 @@ curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/status-
     {
       "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
       "status": "FAILED",
-      "verifiedAt": "2025-01-15T10:24:05.891Z",
-      "message": "Payment verification confirmed failure"
+      "verifiedAt": "2025-01-15T10:24:05.891Z"
     }
     ```
   </Tab>

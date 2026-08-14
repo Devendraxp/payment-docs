@@ -1,7 +1,7 @@
 ---
-title: "GET /payments/{paymentId} — Retrieve a Payment"
+title: "GET /payments/{paymentId} — Retrieve a Payment Record"
 sidebarTitle: "GET /payments/:id"
-description: "Retrieve a payment by its UUID to inspect its current status, instrument details, final gateway, and timestamps."
+description: "Retrieve a single payment by its UUID to inspect current status, the instrument submitted, the final gateway used, and creation and update timestamps."
 ---
 
 The `GET /payments/{paymentId}` endpoint returns the full stored record for a single payment. Use it to check the current status of a payment after creation, inspect the instrument that was submitted, or confirm when the payment was last updated. No authentication is required to call this endpoint.

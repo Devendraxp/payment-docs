@@ -1,10 +1,10 @@
 ---
-title: "GET /experiments — List All Experiments"
+title: "GET /experiments — List and Manage All Experiments"
 sidebarTitle: "GET /experiments"
-description: "List all A/B routing experiments and their current status, including control and treatment weights, target methods, and scheduling information."
+description: "List all A/B routing experiments and manage their lifecycle — update configuration, pause traffic splitting, or mark an experiment as complete."
 ---
 
-The `GET /experiments` endpoint returns every experiment that has been created, regardless of its current status. You can use this endpoint to audit which experiments are running, review their configurations, and check on experiment lifecycle states. The response is an array of experiment objects ordered by creation time. No authentication is required to list experiments.
+The `GET /experiments` endpoint returns every experiment that has been created, regardless of its current status. You can use this endpoint to audit which experiments are running, review their configurations, and check on experiment lifecycle states. The response is an array of experiment objects, most recently created first. No authentication is required to list experiments.
 
 ## Endpoint
 
@@ -119,3 +119,192 @@ The response is a JSON array. Each element represents one experiment.
   }
 ]
 ```
+
+---
+
+## PATCH /experiments/{experimentId} — Update an Experiment
+
+Update one or more fields on an existing experiment. All fields are optional — send only what you want to change. This endpoint is protected and requires the `X-Internal-Api-Key` header.
+
+<Warning>
+  This endpoint requires the `X-Internal-Api-Key` request header. Requests without a valid key receive a `401 Unauthorized` response.
+</Warning>
+
+### Endpoint
+
+```
+PATCH http://localhost:3002/experiments/{experimentId}
+```
+
+### Path Parameters
+
+<ParamField path="experimentId" type="string (UUID)" required>
+  The UUID of the experiment to update. Passing an invalid UUID returns a `400` validation error.
+</ParamField>
+
+### Request Headers
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/json` |
+| `X-Internal-Api-Key` | Your internal API key |
+
+### Request Body
+
+All fields are optional. Include only the fields you want to change.
+
+<ParamField body="name" type="string">
+  A new human-readable name for the experiment.
+</ParamField>
+
+<ParamField body="status" type="string">
+  Set the experiment's lifecycle status directly. Must be one of `DRAFT`, `ACTIVE`, `PAUSED`, or `COMPLETED`.
+</ParamField>
+
+<ParamField body="controlWeight" type="number">
+  Updated control traffic fraction, between `0` and `1`.
+</ParamField>
+
+<ParamField body="treatmentWeight" type="number">
+  Updated treatment traffic fraction, between `0` and `1`.
+</ParamField>
+
+<ParamField body="treatmentConfig" type="object">
+  Updated treatment configuration object.
+</ParamField>
+
+<ParamField body="targetMethods" type="string[]">
+  Updated list of payment methods the experiment applies to. Values are normalised to uppercase automatically.
+</ParamField>
+
+<ParamField body="guardrailConfig" type="object | null">
+  Updated guardrail configuration, or `null` to remove guardrails.
+</ParamField>
+
+<ParamField body="startsAt" type="string (ISO 8601) | null">
+  Updated start time, or `null` to clear the scheduled start.
+</ParamField>
+
+<ParamField body="endsAt" type="string (ISO 8601) | null">
+  Updated end time, or `null` to clear the scheduled end.
+</ParamField>
+
+### Example Request
+
+```bash
+curl -X PATCH http://localhost:3002/experiments/e1a2b3c4-d5e6-7f89-ab01-cd23ef456789 \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Api-Key: dev-internal-key-change-in-prod" \
+  -d '{
+    "name": "Cashfree first for UPI updated",
+    "controlWeight": 0.25,
+    "treatmentWeight": 0.75,
+    "targetMethods": ["UPI"]
+  }'
+```
+
+### Response
+
+Returns `200 OK` with the full updated experiment object.
+
+### Errors
+
+| Status | Reason |
+|---|---|
+| `400 Bad Request` | Invalid UUID in path, or validation failed on a body field. |
+| `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or invalid. |
+| `404 Not Found` | No experiment exists with the given ID. |
+
+---
+
+## POST /experiments/{experimentId}/pause — Pause an Experiment
+
+Immediately halts traffic splitting for an experiment by setting its status to `PAUSED`. No new customer assignments are made while the experiment is paused. You can resume the experiment by calling `PATCH /experiments/{experimentId}` to set `status` back to `ACTIVE`. This endpoint is protected and requires the `X-Internal-Api-Key` header.
+
+<Warning>
+  This endpoint requires the `X-Internal-Api-Key` request header. Requests without a valid key receive a `401 Unauthorized` response.
+</Warning>
+
+### Endpoint
+
+```
+POST http://localhost:3002/experiments/{experimentId}/pause
+```
+
+### Path Parameters
+
+<ParamField path="experimentId" type="string (UUID)" required>
+  The UUID of the experiment to pause. Passing an invalid UUID returns a `400` validation error.
+</ParamField>
+
+### Request Headers
+
+| Header | Value |
+|---|---|
+| `X-Internal-Api-Key` | Your internal API key |
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:3002/experiments/e1a2b3c4-d5e6-7f89-ab01-cd23ef456789/pause \
+  -H "X-Internal-Api-Key: dev-internal-key-change-in-prod"
+```
+
+### Response
+
+Returns `200 OK` with the full updated experiment object, with `status` set to `PAUSED`.
+
+### Errors
+
+| Status | Reason |
+|---|---|
+| `400 Bad Request` | Invalid UUID in path. |
+| `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or invalid. |
+| `404 Not Found` | No experiment exists with the given ID. |
+
+---
+
+## POST /experiments/{experimentId}/complete — Complete an Experiment
+
+Marks an experiment as concluded by setting its status to `COMPLETED`. Once completed, traffic splitting stops and the experiment results are preserved for analysis. This action is final — use it when you have enough data and are ready to act on the outcome. This endpoint is protected and requires the `X-Internal-Api-Key` header.
+
+<Warning>
+  This endpoint requires the `X-Internal-Api-Key` request header. Requests without a valid key receive a `401 Unauthorized` response.
+</Warning>
+
+### Endpoint
+
+```
+POST http://localhost:3002/experiments/{experimentId}/complete
+```
+
+### Path Parameters
+
+<ParamField path="experimentId" type="string (UUID)" required>
+  The UUID of the experiment to complete. Passing an invalid UUID returns a `400` validation error.
+</ParamField>
+
+### Request Headers
+
+| Header | Value |
+|---|---|
+| `X-Internal-Api-Key` | Your internal API key |
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:3002/experiments/e1a2b3c4-d5e6-7f89-ab01-cd23ef456789/complete \
+  -H "X-Internal-Api-Key: dev-internal-key-change-in-prod"
+```
+
+### Response
+
+Returns `200 OK` with the full updated experiment object, with `status` set to `COMPLETED`.
+
+### Errors
+
+| Status | Reason |
+|---|---|
+| `400 Bad Request` | Invalid UUID in path. |
+| `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or invalid. |
+| `404 Not Found` | No experiment exists with the given ID. |

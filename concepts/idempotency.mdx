@@ -1,7 +1,7 @@
 ---
-title: "Idempotency: Prevent Duplicate Payment Charges"
+title: "Idempotency: Safe Retries Without Duplicate Charges"
 sidebarTitle: "Idempotency"
-description: "Learn how idempotency keys protect your customers from duplicate charges when you retry a failed or timed-out payment request."
+description: "Learn how idempotency keys protect your customers from duplicate charges when you safely retry a failed or timed-out payment request."
 ---
 
 Network errors, timeouts, and unexpected client crashes are inevitable. Without a way to safely retry a `POST /payments` request, each retry risks creating a second payment and charging your customer twice. Idempotency keys solve this: include the same key on every retry for the same payment intention and the gateway returns the original response without creating a new payment.
@@ -23,7 +23,7 @@ Include the `idempotency-key` header on every `POST /payments` call. The key can
 
 ```bash
 # First request — payment is created and processed
-curl -X POST http://localhost:3000/payments \
+curl -X POST https://api.example.com/payments \
   -H "Content-Type: application/json" \
   -H "idempotency-key: order-12345" \
   -d '{
@@ -35,7 +35,7 @@ curl -X POST http://localhost:3000/payments \
   }'
 
 # Retry after a network error — safe to send again
-curl -X POST http://localhost:3000/payments \
+curl -X POST https://api.example.com/payments \
   -H "Content-Type: application/json" \
   -H "idempotency-key: order-12345" \
   -d '{

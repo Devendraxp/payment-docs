@@ -1,7 +1,7 @@
 ---
-title: "GET /payments/{paymentId}/routing-decision"
+title: "GET /payments/{paymentId}/routing-decision — Inspect Routing"
 sidebarTitle: "GET /routing-decision"
-description: "Retrieve the stored routing decision for a payment, including the ranked gateway list, composite scores, and the reason for the final routing outcome."
+description: "Retrieve the stored routing decision for a payment, including the ranked gateway list, per-gateway scores, the selected gateway, and the routing reason."
 ---
 
 The `GET /payments/{paymentId}/routing-decision` endpoint returns the gateway selection decision that was recorded at the moment the payment was processed. The routing engine evaluates every available gateway against a set of scoring factors — historical success rate, latency, payment method compatibility, bank affinity, amount range, and time-of-day patterns — then ranks them from most to least preferred. The orchestrator works down that ranked list until a gateway succeeds or all options are exhausted. This endpoint lets you audit exactly how and why a particular gateway was chosen.
@@ -38,56 +38,38 @@ curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/routing
 
 ## Response Fields
 
+<ResponseField name="id" type="string">
+  UUID uniquely identifying this routing decision record.
+</ResponseField>
+
 <ResponseField name="paymentId" type="string">
   The UUID of the payment this routing decision belongs to.
 </ResponseField>
 
-<ResponseField name="rankedGateways" type="array">
-  The ordered list of gateways as ranked by the routing engine at payment time. The orchestrator tries gateways from index `0` downward.
+<ResponseField name="rankedGateways" type="array of strings">
+  The ordered list of gateway names as ranked by the routing engine at payment time, from most preferred (index `0`) to least preferred. The orchestrator tries gateways in this order.
+</ResponseField>
 
-  <Expandable title="Gateway ranking object">
-    <ResponseField name="gatewayName" type="string">
-      The name of the gateway (for example, `RAZORPAY`, `PAYU`, `CASHFREE`).
-    </ResponseField>
+<ResponseField name="selectedGateway" type="string | null">
+  The name of the gateway that was actually selected and used for the first attempt. `null` if no gateway was available.
+</ResponseField>
 
+<ResponseField name="scores" type="object">
+  A map of gateway name to score details. Each key is a gateway name (for example, `"RAZORPAY"`), and the value is an object containing the composite `score` and the individual `factors` that produced it.
+
+  <Expandable title="Score object (per gateway)">
     <ResponseField name="score" type="number">
       The composite score assigned to this gateway for this payment, as a decimal between `0` and `1`. Higher scores indicate a stronger preference.
     </ResponseField>
 
     <ResponseField name="factors" type="object">
-      The individual factor scores that were combined to produce the composite score.
-
-      <Expandable title="Factor scores">
-        <ResponseField name="successScore" type="number">
-          Score based on the gateway's recent payment success rate.
-        </ResponseField>
-
-        <ResponseField name="latencyScore" type="number">
-          Score based on the gateway's recent average response latency. Lower latency produces a higher score.
-        </ResponseField>
-
-        <ResponseField name="methodScore" type="number">
-          Score based on how well this gateway historically performs for the payment method (UPI, CARD, etc.) used in this payment.
-        </ResponseField>
-
-        <ResponseField name="bankScore" type="number">
-          Score based on the gateway's success rate with the specific bank in the instrument.
-        </ResponseField>
-
-        <ResponseField name="amountScore" type="number">
-          Score based on the gateway's success rate for payments in a similar amount range.
-        </ResponseField>
-
-        <ResponseField name="timeScore" type="number">
-          Score based on the gateway's historical performance at the current time of day and day of week.
-        </ResponseField>
-      </Expandable>
+      The individual factor scores that were combined to produce the composite score. Factor names and values vary by routing configuration.
     </ResponseField>
   </Expandable>
 </ResponseField>
 
-<ResponseField name="routingReason" type="string">
-  A human-readable explanation of the final routing outcome — for example, why a lower-ranked gateway was ultimately selected if the top-ranked gateway failed.
+<ResponseField name="reason" type="string | null">
+  A human-readable explanation of the routing outcome — for example, why a particular gateway was selected or why routing fell through to a lower-ranked option.
 </ResponseField>
 
 <ResponseField name="createdAt" type="datetime">
@@ -100,10 +82,12 @@ curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/routing
 
 ```json
 {
+  "id": "d5e6f7a8-1234-4b9c-8d0e-abcdef012345",
   "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
-  "rankedGateways": [
-    {
-      "gatewayName": "RAZORPAY",
+  "rankedGateways": ["RAZORPAY", "PAYU", "CASHFREE"],
+  "selectedGateway": "RAZORPAY",
+  "scores": {
+    "RAZORPAY": {
       "score": 0.87,
       "factors": {
         "successScore": 0.92,
@@ -114,8 +98,7 @@ curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/routing
         "timeScore": 0.83
       }
     },
-    {
-      "gatewayName": "PAYU",
+    "PAYU": {
       "score": 0.73,
       "factors": {
         "successScore": 0.78,
@@ -126,8 +109,7 @@ curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/routing
         "timeScore": 0.75
       }
     },
-    {
-      "gatewayName": "CASHFREE",
+    "CASHFREE": {
       "score": 0.61,
       "factors": {
         "successScore": 0.65,
@@ -138,8 +120,8 @@ curl http://localhost:3000/payments/b3e2a1d4-7f6e-4c5b-9a8d-123456789abc/routing
         "timeScore": 0.55
       }
     }
-  ],
-  "routingReason": "RAZORPAY selected as top-ranked gateway with highest composite score",
+  },
+  "reason": "RAZORPAY selected as top-ranked gateway with highest composite score",
   "createdAt": "2025-01-15T10:23:45.050Z"
 }
 ```

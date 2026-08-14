@@ -1,7 +1,7 @@
 ---
 title: "PUT /retry-policy/{merchantId} — Set Merchant Policy"
-sidebarTitle: "PUT /retry-policy/:id"
-description: "Create or fully replace the retry policy for a specific merchant. Controls attempt limits, total latency budget, and whether timeouts trigger a retry. Requires the internal API key."
+sidebarTitle: "Upsert Policy"
+description: "Create or update a merchant retry policy. Controls max attempts, total latency budget, and whether timeouts trigger retries. Requires the internal API key."
 ---
 
 The `PUT /retry-policy/{merchantId}` endpoint creates a new retry policy for a merchant, or replaces an existing one in full. Use it to tune how aggressively the orchestrator retries failed payments for a specific merchant — for example, giving a high-volume merchant a larger attempt budget while keeping a low-latency budget for checkout flows where speed is critical. The operation is idempotent: calling it multiple times with the same body always produces the same stored policy.
@@ -24,15 +24,17 @@ PUT http://localhost:3000/retry-policy/{merchantId}
 
 ## Request Body
 
-<ParamField body="maxAttempts" type="integer" required>
+All body fields are optional — include only the fields you want to set or change. Fields omitted from the request retain their existing values (or the platform defaults when creating a new policy).
+
+<ParamField body="maxAttempts" type="integer">
   Maximum number of gateway attempts the orchestrator will make per payment, including the initial attempt. Must be `>= 1`. Setting this to `1` effectively disables retries — only the top-ranked gateway is tried.
 </ParamField>
 
-<ParamField body="latencyBudgetMs" type="integer" required>
+<ParamField body="latencyBudgetMs" type="integer">
   Total millisecond budget allocated across all gateway attempts for a single payment. Must be `>= 100`. When the cumulative time spent across attempts exceeds this value the orchestrator stops retrying and returns a failure, even if `maxAttempts` has not been exhausted. This prevents a single slow payment from blocking the customer for too long.
 </ParamField>
 
-<ParamField body="retryOnTimeout" type="boolean" required>
+<ParamField body="retryOnTimeout" type="boolean">
   Controls whether a gateway timeout is treated as a retryable failure. When `true`, a timeout causes the orchestrator to move on to the next ranked gateway (subject to the remaining budget). When `false`, a timeout is treated as a terminal failure and the payment is not retried.
 </ParamField>
 
@@ -75,4 +77,4 @@ On success the endpoint returns the complete, created or updated retry policy ob
 | Status | Description |
 |--------|-------------|
 | `401 Unauthorized` | The `X-Internal-Api-Key` header is missing or contains an invalid key. |
-| `400 Bad Request` | One or more required fields are missing or fail validation (e.g., `latencyBudgetMs` below `100`). |
+| `400 Bad Request` | One or more fields fail validation (e.g., `maxAttempts` below `1`, or `latencyBudgetMs` below `100`). |

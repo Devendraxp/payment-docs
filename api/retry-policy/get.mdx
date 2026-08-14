@@ -1,7 +1,7 @@
 ---
 title: "GET /retry-policy/{merchantId} — Get Merchant Policy"
-sidebarTitle: "GET /retry-policy/:id"
-description: "Retrieve the retry policy for a specific merchant by their merchantId. Returns the default policy if no custom policy has been configured. Requires the internal API key."
+sidebarTitle: "Get Policy"
+description: "Retrieve the retry policy for a specific merchant. Returns the platform default if no custom policy exists. Requires the internal API key."
 ---
 
 The `GET /retry-policy/{merchantId}` endpoint retrieves the retry policy the orchestrator applies when processing payments for a specific merchant. Use this endpoint to inspect the current settings for a merchant before modifying them, or to verify that an upsert took effect correctly.
@@ -30,7 +30,7 @@ curl http://localhost:3000/retry-policy/amazon \
 ```
 
 <Note>
-  If no custom retry policy has been configured for the requested merchant, the orchestrator returns the system-wide default policy rather than a `404` error. Check the `merchantId` field in the response to confirm whether the returned policy is merchant-specific or the platform default.
+  If no custom retry policy has been configured for the requested merchant, the orchestrator returns the platform default policy rather than a `404` error. The default policy uses `maxAttempts: 3`, `latencyBudgetMs: 10000`, and `retryOnTimeout: false`. Check the `merchantId` field in the response to confirm whether the returned policy is merchant-specific or the platform default.
 </Note>
 
 ## Response

@@ -1,7 +1,7 @@
 ---
-title: "GET /gateways/{gatewayName} — Get Gateway Config"
-sidebarTitle: "GET /gateways/:name"
-description: "Retrieve the full simulator configuration for a single named payment gateway, including its success rate, latency, and affinity weights."
+title: "Retrieve a Single Payment Gateway — GET /gateways/:name"
+sidebarTitle: "Get Gateway"
+description: "Retrieve the full configuration for a single named payment gateway, including its success rate, latency, supported methods, and affinity weights."
 ---
 
 The `GET /gateways/{gatewayName}` endpoint fetches the complete configuration record for one specific payment gateway by its internal name. You can use this endpoint to verify a gateway's current settings, inspect its affinity maps, or confirm whether it is enabled before running tests. No authentication is required.
@@ -65,11 +65,19 @@ On success the endpoint returns a single gateway object with the following field
 </ResponseField>
 
 <ResponseField name="timePenalties" type="object" required>
-  Hour-of-day penalty map (24-hour UTC). Keys are hour strings; values are penalty multipliers.
+  Hour-of-day penalty map (24-hour UTC). Keys are hour strings; values are penalty offsets applied to the gateway's time score.
 </ResponseField>
 
 <ResponseField name="enabled" type="boolean" required>
   Whether the gateway participates in routing. When `false`, the orchestrator skips it entirely.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+  ISO 8601 timestamp of when the gateway record was created.
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string" required>
+  ISO 8601 timestamp of when the gateway record was last updated.
 </ResponseField>
 
 ## Example Response
@@ -102,7 +110,9 @@ On success the endpoint returns a single gateway object with the following field
     "2": 0.8,
     "3": 0.75
   },
-  "enabled": true
+  "enabled": true,
+  "createdAt": "2024-01-15T08:00:00.000Z",
+  "updatedAt": "2024-01-15T08:00:00.000Z"
 }
 ```
 

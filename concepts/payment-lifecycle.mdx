@@ -1,5 +1,5 @@
 ---
-title: "Payment Lifecycle: From Request to Final Status"
+title: "Payment Lifecycle: From Submission to Final Status"
 sidebarTitle: "Payment Lifecycle"
 description: "Understand the full journey of a payment — from submission through gateway routing, success or failure, and async timeout resolution."
 ---
@@ -78,7 +78,7 @@ When an attempt has a `FAILED` status, the `errorType` field classifies how the 
 </CardGroup>
 
 <Note>
-  The `TIMEOUT` error type is a third classification used internally. A timeout never triggers a retry on a different gateway; instead it moves the payment to `PENDING_VERIFICATION` so the original attempt can be verified asynchronously before any further action is taken.
+  `TIMEOUT` is a third error type you may see on a payment attempt. A timeout never triggers a retry on a different gateway; instead it moves the payment to `PENDING_VERIFICATION` so the original attempt can be verified asynchronously before any further action is taken.
 </Note>
 
 ---

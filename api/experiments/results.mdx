@@ -1,10 +1,10 @@
 ---
 title: "GET /experiments/{id}/results — Experiment Results"
 sidebarTitle: "GET /results"
-description: "Retrieve aggregated success rate metrics for both control and treatment variants of an experiment, including improvement percentage and significance status."
+description: "Retrieve aggregated success rate and latency metrics for both the control and treatment variants of a completed or active experiment."
 ---
 
-The `/experiments/{experimentId}/results` endpoint gives you a side-by-side summary of how the control and treatment variants have performed over the lifetime of an experiment. The response includes attempt counts and success rates for each variant, the percentage improvement (or regression) of the treatment over the control, and a flag indicating whether enough data has accumulated to consider the results statistically conclusive. No authentication is required.
+The `/experiments/{experimentId}/results` endpoint gives you a side-by-side summary of how the control and treatment variants have performed over the lifetime of an experiment. The response includes the full experiment object alongside per-variant metrics: sample count, success count, success rate, and average payment latency. No authentication is required.
 
 ## Endpoint
 
@@ -26,84 +26,76 @@ curl http://localhost:3002/experiments/e1a2b3c4-d5e6-7f89-ab01-cd23ef456789/resu
 
 ## Response Fields
 
-<ResponseField name="experimentId" type="string (UUID)">
-  The experiment's unique identifier, echoed back for easy correlation.
+<ResponseField name="experiment" type="object">
+  The full experiment record, identical to what `GET /experiments/{id}` returns — includes `id`, `name`, `status`, `controlWeight`, `treatmentWeight`, `treatmentConfig`, `targetMethods`, `guardrailConfig`, `startsAt`, `endsAt`, `createdAt`, and `updatedAt`.
 </ResponseField>
 
-<ResponseField name="name" type="string">
-  The human-readable name of the experiment.
-</ResponseField>
+<ResponseField name="results" type="object">
+  An object with two keys — `CONTROL` and `TREATMENT` — each containing aggregated outcome metrics for that variant.
 
-<ResponseField name="status" type="string">
-  The current lifecycle status of the experiment: `DRAFT`, `ACTIVE`, `PAUSED`, or `COMPLETED`.
-</ResponseField>
-
-<ResponseField name="control" type="object">
-  Aggregated outcome metrics for customers assigned to the **control** variant.
-
-  <Expandable title="control fields">
-    <ResponseField name="successRate" type="number">
-      The success rate for the control variant, as a decimal between `0` and `1`.
-    </ResponseField>
-
-    <ResponseField name="totalAttempts" type="integer">
-      Total number of payment attempts recorded in the control group.
+  <Expandable title="CONTROL and TREATMENT fields">
+    <ResponseField name="samples" type="integer">
+      Total number of payment outcomes recorded for this variant.
     </ResponseField>
 
     <ResponseField name="successCount" type="integer">
-      Number of successful payment attempts in the control group.
+      Number of payment outcomes with a final status of `SUCCESS`.
     </ResponseField>
-  </Expandable>
-</ResponseField>
 
-<ResponseField name="treatment" type="object">
-  Aggregated outcome metrics for customers assigned to the **treatment** variant.
-
-  <Expandable title="treatment fields">
     <ResponseField name="successRate" type="number">
-      The success rate for the treatment variant, as a decimal between `0` and `1`.
+      The success rate for this variant, as a decimal between `0` and `1`, rounded to four decimal places. Returns `0` when `samples` is `0`.
     </ResponseField>
 
-    <ResponseField name="totalAttempts" type="integer">
-      Total number of payment attempts recorded in the treatment group.
-    </ResponseField>
-
-    <ResponseField name="successCount" type="integer">
-      Number of successful payment attempts in the treatment group.
+    <ResponseField name="averageLatencyMs" type="integer">
+      The average end-to-end payment latency in milliseconds across all outcomes in this variant. Returns `0` when `samples` is `0`.
     </ResponseField>
   </Expandable>
-</ResponseField>
-
-<ResponseField name="improvement" type="number">
-  The percentage improvement of the treatment variant over the control. A positive value means the treatment is performing better. Calculated as `((treatment.successRate - control.successRate) / control.successRate) * 100`. A negative value indicates a regression.
-</ResponseField>
-
-<ResponseField name="conclusionReached" type="boolean">
-  Indicates whether the experiment has collected enough data to draw a statistically meaningful conclusion. When `false`, continue running the experiment to accumulate more samples before acting on the results.
 </ResponseField>
 
 ## Example Response
 
 ```json
 {
-  "experimentId": "e1a2b3c4-d5e6-7f89-ab01-cd23ef456789",
-  "name": "Cashfree first for UPI",
-  "status": "ACTIVE",
-  "control": {
-    "successRate": 0.9420,
-    "totalAttempts": 1842,
-    "successCount": 1735
+  "experiment": {
+    "id": "e1a2b3c4-d5e6-7f89-ab01-cd23ef456789",
+    "name": "Cashfree first for UPI",
+    "status": "ACTIVE",
+    "controlWeight": 0.5,
+    "treatmentWeight": 0.5,
+    "treatmentConfig": {
+      "gatewayOrderOverride": ["cashfree", "razorpay", "payu", "juspay"]
+    },
+    "targetMethods": ["UPI"],
+    "guardrailConfig": null,
+    "startsAt": "2024-11-15T12:00:00.000Z",
+    "endsAt": "2024-11-22T12:00:00.000Z",
+    "createdAt": "2024-11-15T10:30:00.000Z",
+    "updatedAt": "2024-11-15T12:00:00.000Z"
   },
-  "treatment": {
-    "successRate": 0.9671,
-    "totalAttempts": 1889,
-    "successCount": 1826
-  },
-  "improvement": 2.67,
-  "conclusionReached": true
+  "results": {
+    "CONTROL": {
+      "samples": 1842,
+      "successCount": 1735,
+      "successRate": 0.9420,
+      "averageLatencyMs": 312
+    },
+    "TREATMENT": {
+      "samples": 1889,
+      "successCount": 1826,
+      "successRate": 0.9671,
+      "averageLatencyMs": 287
+    }
+  }
 }
 ```
 
 <Tip>
-  Wait until you have **at least a few hundred attempts per variant** before drawing conclusions from the results. With too few samples, random variance can make a neutral or even harmful treatment appear beneficial. As a rule of thumb, aim for 500+ attempts in each group before using `conclusionReached` as your primary signal to stop the experiment.
+  To compute the percentage improvement of the treatment over control, use `((treatment.successRate - control.successRate) / control.successRate) * 100`. In the example above that works out to approximately `+2.67%`. Wait until you have **at least a few hundred samples per variant** before drawing conclusions — with too few data points, random variance can make a neutral or even harmful treatment appear beneficial.
 </Tip>
+
+## Errors
+
+| Status | Reason |
+|---|---|
+| `400 Bad Request` | The `experimentId` path parameter is not a valid UUID. |
+| `404 Not Found` | No experiment exists with the given ID. |

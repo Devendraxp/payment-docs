@@ -4,7 +4,7 @@ sidebarTitle: "GET /bandit/order"
 description: "Sample a Thompson-optimal gateway ordering for a set of gateways in a given segment by drawing from each gateway's Beta distribution."
 ---
 
-The `/bandit/order/{segment}` endpoint draws a fresh Thompson Sampling from each gateway's Beta distribution and returns the gateways sorted by their sampled score, highest first. This is the ordering the payment router uses when the bandit algorithm is active: gateways that have demonstrated higher success rates over time tend to appear earlier in the list, but stochastic sampling ensures occasional reordering so the system continues to explore and adapt. No authentication is required.
+The `/bandit/order/{segment}` endpoint draws a fresh Thompson Sampling score from each gateway's Beta distribution and returns the gateways sorted by their sampled score, highest first. This is the ordering the payment router uses when the bandit algorithm is active: gateways that have demonstrated higher success rates over time tend to appear earlier in the list, but stochastic sampling ensures occasional reordering so the system continues to explore and adapt. No authentication is required.
 
 ## Endpoint
 
@@ -15,7 +15,7 @@ GET http://localhost:3002/bandit/order/{segment}
 ## Path Parameters
 
 <ParamField path="segment" type="string" required>
-  The payment segment to sample gateway ordering for. Typically the uppercased payment method — for example, `UPI`, `CARD`, `NETBANKING`, or `WALLET`. The bandit reads Beta distribution parameters from the matching segment's state in Redis.
+  The payment segment to sample gateway ordering for. Typically the uppercased payment method — for example, `UPI`, `CARD`, `NETBANKING`, or `WALLET`. The bandit reads the Beta distribution parameters for each gateway within the matching segment.
 </ParamField>
 
 ## Query Parameters
@@ -30,23 +30,14 @@ GET http://localhost:3002/bandit/order/{segment}
 curl "http://localhost:3002/bandit/order/UPI?gateways=cashfree,razorpay,payu,juspay"
 ```
 
-## Response Fields
+## Response
 
-<ResponseField name="segment" type="string">
-  The segment for which this ordering was sampled, echoed back for confirmation.
-</ResponseField>
-
-<ResponseField name="order" type="string[]">
-  An ordered array of gateway names, sorted from most-preferred to least-preferred based on the Thompson Sampling draw. The payment orchestrator uses this array as its priority list — it attempts the first gateway, falls back to the second on failure, and so on.
-</ResponseField>
+The response is a JSON array of gateway name strings, ordered from most-preferred to least-preferred based on the Thompson Sampling draw. The payment orchestrator uses this array as its priority list — it attempts the first gateway, falls back to the second on failure, and so on.
 
 ## Example Response
 
 ```json
-{
-  "segment": "UPI",
-  "order": ["razorpay", "cashfree", "payu", "juspay"]
-}
+["razorpay", "cashfree", "payu", "juspay"]
 ```
 
 <Note>

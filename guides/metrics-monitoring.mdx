@@ -4,21 +4,21 @@ sidebarTitle: "Metrics & Monitoring"
 description: "Query real-time hot metrics and historical data for each gateway to understand success rates, latency percentiles, and attempt volumes."
 ---
 
-The metrics service (running on port `3001`) gives you a live view of how every gateway is performing. It maintains two tiers of data: **hot metrics** that reflect the most recent five minutes of activity, and **historical metrics** persisted to the database for longer-term analysis. The routing engine uses hot metrics directly when scoring and ranking gateways for each payment, so the numbers you see here are the same ones driving routing decisions in real time.
+The metrics service (running on port `3001`) gives you a live view of how every gateway is performing. It maintains two tiers of data: **hot metrics** that reflect rolling windows of recent activity, and **historical metrics** persisted to the database for longer-term analysis. The routing engine uses hot metrics directly when scoring and ranking gateways for each payment, so the numbers you see here are the same ones driving routing decisions in real time.
 
 ## Metric Tiers
 
 <CardGroup cols={2}>
   <Card title="Hot Metrics" icon="bolt">
-    Stored in Redis as a 5-minute sliding window. Updated after every payment attempt. Fields: `success_rate_5m`, `p95_5m`, `attempts_5m`.
+    Stored in a fast in-memory store with rolling windows of 1, 5, 15, and 60 minutes. Updated after every payment attempt.
   </Card>
   <Card title="Historical Metrics" icon="database">
-    Persisted to PostgreSQL. Query via `GET /metrics/history/{gatewayName}` for trend analysis and longer-term reporting.
+    Persisted for longer-term retention. Query via `GET /metrics/history/{gatewayName}` for trend analysis and longer-term reporting.
   </Card>
 </CardGroup>
 
 <Note>
-  Hot metrics are **eventually consistent**. There may be a short delay between a payment attempt completing and its outcome being reflected in the 5-minute window. For real-time debugging, use the attempts API on the payment orchestrator (`GET /payments/{paymentId}/attempts`) to inspect the latest attempt immediately.
+  Hot metrics are **eventually consistent**. There may be a short delay between a payment attempt completing and its outcome being reflected in the rolling window. For real-time debugging, use the attempts API on the payment orchestrator (`GET /payments/{paymentId}/attempts`) to inspect the latest attempt immediately.
 </Note>
 
 ## Get All Gateway Hot Metrics
@@ -36,19 +36,19 @@ curl http://localhost:3001/metrics/gateways
       "UPI": {
         "success_rate_5m": 0.91,
         "p95_5m": 1240,
-        "attempts_5m": 87
+        "total_5m": 87
       },
       "CARD": {
         "success_rate_5m": 0.85,
         "p95_5m": 1850,
-        "attempts_5m": 42
+        "total_5m": 42
       }
     },
     "razorpay": {
       "UPI": {
         "success_rate_5m": 0.78,
         "p95_5m": 2100,
-        "attempts_5m": 63
+        "total_5m": 63
       }
     }
   }
@@ -70,12 +70,12 @@ curl http://localhost:3001/metrics/gateways/razorpay
     "UPI": {
       "success_rate_5m": 0.78,
       "p95_5m": 2100,
-      "attempts_5m": 63
+      "total_5m": 63
     },
     "CARD": {
       "success_rate_5m": 0.82,
       "p95_5m": 1700,
-      "attempts_5m": 31
+      "total_5m": 31
     }
   }
 }
@@ -96,18 +96,27 @@ curl http://localhost:3001/metrics/gateways/razorpay/UPI
   "metrics": {
     "success_rate_5m": 0.78,
     "p95_5m": 2100,
-    "attempts_5m": 63
+    "total_5m": 63
   }
 }
 ```
 
 ## Understanding the Hot Metric Fields
 
-| Field | Type | Description |
+Each response includes metrics for multiple rolling windows. The suffix on each field name indicates the window length: `_1m`, `_5m`, `_15m`, and `_60m`.
+
+| Field pattern | Type | Description |
 |---|---|---|
-| `success_rate_5m` | float (0–1) | Fraction of attempts in the last 5 minutes that succeeded. |
-| `p95_5m` | integer (ms) | 95th-percentile gateway response latency over the last 5 minutes. |
-| `attempts_5m` | integer | Total number of attempts recorded in the last 5 minutes. |
+| `success_rate_{window}` | float (0–1) | Fraction of attempts in the window that succeeded. |
+| `p95_{window}` | integer (ms) | 95th-percentile gateway response latency over the window. |
+| `p50_{window}` | integer (ms) | 50th-percentile (median) gateway response latency over the window. |
+| `p99_{window}` | integer (ms) | 99th-percentile gateway response latency over the window. |
+| `total_{window}` | integer | Total number of attempts recorded in the window. |
+| `success_{window}` | integer | Number of successful attempts in the window. |
+| `fail_{window}` | integer | Number of failed attempts in the window. |
+| `timeout_{window}` | integer | Number of timed-out attempts in the window. |
+
+For example, `success_rate_5m` is the success rate over the last 5 minutes, and `p95_15m` is the p95 latency over the last 15 minutes.
 
 ## Get Historical Metrics
 
@@ -132,25 +141,3 @@ These hot metrics are not just for observability — they feed directly into the
 
   The response shows each gateway's computed score and the individual components (including the success-rate contribution) that produced it. This is the fastest way to understand why a particular gateway is being preferred or deprioritized.
 </Tip>
-
-## Check Metrics Service Health
-
-Verify that the Kafka consumer is running and the internal processing buffers are healthy:
-
-```bash
-curl http://localhost:3001/metrics/health
-```
-
-```json
-{
-  "kafkaConsumerRunning": true,
-  "bufferSizes": {
-    "cashfree": 0,
-    "razorpay": 2,
-    "payu": 0,
-    "juspay": 1
-  }
-}
-```
-
-A non-zero buffer size means there are pending attempt events that have been received from Kafka but not yet flushed to the sliding window. Under normal load, buffers drain within milliseconds.

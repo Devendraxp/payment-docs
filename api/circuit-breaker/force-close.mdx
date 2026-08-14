@@ -1,7 +1,7 @@
 ---
 title: "POST /circuit-breaker/force-close — Close a Circuit"
 sidebarTitle: "Force Close"
-description: "Immediately force a gateway-method circuit to the CLOSED state, restoring it to healthy routing. Use this after resolving an incident or after testing with force-open."
+description: "Force a gateway-method circuit to the CLOSED state to restore healthy routing. Use after resolving a gateway incident or finishing a force-open test."
 ---
 
 The `POST /circuit-breaker/force-close/{gatewayName}/{method}` endpoint immediately transitions a gateway-method circuit to the `CLOSED` state, marking it as healthy and restoring it to normal routing. You would typically call this endpoint after resolving an incident that prompted a forced-open, or after finishing a failover test that required temporarily removing a gateway from the routing pool. The change takes effect immediately — the orchestrator includes the gateway in subsequent routing decisions without waiting for the automatic half-open probe cycle to complete.

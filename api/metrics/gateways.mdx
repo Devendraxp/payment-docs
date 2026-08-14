@@ -1,10 +1,10 @@
 ---
 title: "GET /metrics/gateways — All Gateway Hot Metrics"
-sidebarTitle: "GET /metrics/gateways"
-description: "Retrieve the rolling 5-minute sliding window hot metrics for every registered gateway and payment method in a single response."
+sidebarTitle: "All Gateways"
+description: "Retrieve rolling hot metrics for every registered gateway and payment method in a single response, covering 1-minute, 5-minute, 15-minute, and 60-minute windows."
 ---
 
-The `/metrics/gateways` endpoint returns real-time hot metrics for all gateways currently tracked by the metrics service. Metrics are computed from an in-memory sliding window of payment attempt events — sourced from Kafka — and cached in Redis. The response groups results by gateway name and then by payment method, giving you an instant snapshot of how every gateway is performing right now. No authentication is required to call this endpoint.
+The `/metrics/gateways` endpoint returns real-time hot metrics for all gateways currently tracked by the metrics service. The response groups results by gateway name and then by payment method, giving you an instant snapshot of how every gateway is performing right now. No authentication is required to call this endpoint.
 
 ## Endpoint
 
@@ -24,26 +24,50 @@ curl http://localhost:3001/metrics/gateways
 
 ## Response Fields
 
-The top-level response contains a single `gateways` key whose value is an object keyed by gateway name. Each gateway value is itself an object keyed by payment method (e.g., `UPI`, `CARD`). Each method entry contains the following fields:
+The top-level response contains a single `gateways` key whose value is an object keyed by gateway name. Each gateway value is itself an object keyed by payment method (e.g., `UPI`, `CARD`). Each method entry contains rolling-window statistics across four time windows (`1m`, `5m`, `15m`, `60m`), plus a timestamp.
 
 <ResponseField name="gateways" type="object" required>
   A map of gateway names to their per-method metric objects.
 
   <Expandable title="gateways[gatewayName]">
     <ResponseField name="[method]" type="object">
-      Metrics object for a specific payment method within this gateway.
+      Metrics object for a specific payment method within this gateway. Each field name is suffixed with the window duration: `_1m`, `_5m`, `_15m`, or `_60m`.
 
       <Expandable title="method metrics">
-        <ResponseField name="success_rate_5m" type="number">
-          Rolling success rate over the last 5 minutes, expressed as a value between `0` and `1` (e.g., `0.9732` means 97.32% success rate).
+        <ResponseField name="success_rate_{window}" type="number">
+          Rolling success rate over the window, as a decimal between `0` and `1` (e.g., `0.9732` means 97.32%). Computed as `successCount / totalCount`; returns `0` when there are no attempts.
         </ResponseField>
 
-        <ResponseField name="p95_5m" type="number">
-          95th-percentile latency in milliseconds over the last 5-minute window. Useful for assessing tail latency; lower values indicate a more responsive gateway.
+        <ResponseField name="success_{window}" type="integer">
+          Number of payment attempts that returned a `SUCCESS` status within the window.
         </ResponseField>
 
-        <ResponseField name="attempts_5m" type="integer">
-          Total number of payment attempts recorded in the last 5-minute window, including successes, failures, and timeouts.
+        <ResponseField name="fail_{window}" type="integer">
+          Number of payment attempts that returned a `FAILED` status within the window.
+        </ResponseField>
+
+        <ResponseField name="timeout_{window}" type="integer">
+          Number of payment attempts that returned a `TIMEOUT` status within the window.
+        </ResponseField>
+
+        <ResponseField name="total_{window}" type="integer">
+          Total number of payment attempts recorded within the window, including successes, failures, and timeouts.
+        </ResponseField>
+
+        <ResponseField name="p50_{window}" type="number">
+          50th-percentile (median) latency in milliseconds over the window.
+        </ResponseField>
+
+        <ResponseField name="p95_{window}" type="number">
+          95th-percentile latency in milliseconds over the window. Useful for assessing tail latency; lower values indicate a more responsive gateway.
+        </ResponseField>
+
+        <ResponseField name="p99_{window}" type="number">
+          99th-percentile latency in milliseconds over the window.
+        </ResponseField>
+
+        <ResponseField name="last_updated" type="string">
+          ISO 8601 timestamp of the last time this metric entry was updated.
         </ResponseField>
       </Expandable>
     </ResponseField>
@@ -57,44 +81,63 @@ The top-level response contains a single `gateways` key whose value is an object
   "gateways": {
     "razorpay": {
       "UPI": {
-        "success_rate_5m": "0.9732",
-        "p95_5m": "312",
-        "attempts_5m": "149",
         "success_rate_1m": "0.9800",
+        "success_1m": "49",
+        "fail_1m": "1",
+        "timeout_1m": "0",
+        "total_1m": "50",
+        "p50_1m": "210",
         "p95_1m": "298",
-        "attempts_1m": "50",
+        "p99_1m": "340",
+        "success_rate_5m": "0.9732",
+        "success_5m": "145",
+        "fail_5m": "3",
+        "timeout_5m": "1",
+        "total_5m": "149",
+        "p50_5m": "225",
+        "p95_5m": "312",
+        "p99_5m": "380",
         "success_rate_15m": "0.9650",
+        "success_15m": "405",
+        "fail_15m": "12",
+        "timeout_15m": "3",
+        "total_15m": "420",
+        "p50_15m": "230",
         "p95_15m": "340",
-        "attempts_15m": "420",
+        "p99_15m": "410",
+        "success_rate_60m": "0.9601",
+        "success_60m": "1536",
+        "fail_60m": "54",
+        "timeout_60m": "10",
+        "total_60m": "1600",
+        "p50_60m": "235",
+        "p95_60m": "355",
+        "p99_60m": "430",
         "last_updated": "2024-11-15T10:23:45.123Z"
       },
       "CARD": {
         "success_rate_5m": "0.9481",
+        "success_5m": "82",
+        "fail_5m": "4",
+        "timeout_5m": "1",
+        "total_5m": "87",
+        "p50_5m": "420",
         "p95_5m": "540",
-        "attempts_5m": "87",
+        "p99_5m": "620",
         "last_updated": "2024-11-15T10:23:44.001Z"
       }
     },
     "cashfree": {
       "UPI": {
         "success_rate_5m": "0.9615",
+        "success_5m": "125",
+        "fail_5m": "4",
+        "timeout_5m": "1",
+        "total_5m": "130",
+        "p50_5m": "195",
         "p95_5m": "285",
-        "attempts_5m": "130",
+        "p99_5m": "330",
         "last_updated": "2024-11-15T10:23:46.789Z"
-      },
-      "NETBANKING": {
-        "success_rate_5m": "0.9100",
-        "p95_5m": "870",
-        "attempts_5m": "41",
-        "last_updated": "2024-11-15T10:23:40.555Z"
-      }
-    },
-    "payu": {
-      "CARD": {
-        "success_rate_5m": "0.9350",
-        "p95_5m": "610",
-        "attempts_5m": "60",
-        "last_updated": "2024-11-15T10:23:43.210Z"
       }
     }
   }
@@ -102,5 +145,5 @@ The top-level response contains a single `gateways` key whose value is an object
 ```
 
 <Note>
-  Hot metrics are **eventually consistent**. Because events flow through Kafka before being processed and written to Redis, there may be a brief delay of a few seconds between when a payment is processed and when its outcome is reflected in these metrics. Do not rely on this endpoint for strict real-time consistency guarantees.
+  Hot metrics are **eventually consistent**. There may be a brief delay of a few seconds between when a payment is processed and when its outcome is reflected in these metrics. Do not rely on this endpoint for strict real-time consistency guarantees.
 </Note>

@@ -1,5 +1,5 @@
 ---
-title: "Authenticate Requests to Payment Gateway API"
+title: "Payment Gateway API Authentication and Access Tiers"
 sidebarTitle: "Authentication"
 description: "Payment Gateway uses two access modes: public endpoints that require no credentials, and protected endpoints that require an internal API key header."
 ---
@@ -34,7 +34,7 @@ Payment Gateway divides its API surface into two access tiers. Most read-oriente
 
     | Method | Path | Description |
     |---|---|---|
-    | `GET` | `/metrics/health` | Kafka consumer and buffer status |
+    | `GET` | `/metrics/health` | Check metrics service health and consumer status |
     | `GET` | `/metrics/gateways` | All gateway hot metrics |
     | `GET` | `/metrics/gateways/{gatewayName}` | Gateway metrics grouped by method |
     | `GET` | `/metrics/gateways/{gatewayName}/{method}` | Gateway-method hot metrics |

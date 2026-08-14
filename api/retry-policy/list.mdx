@@ -1,7 +1,7 @@
 ---
-title: "GET /retry-policy — List All Retry Policies"
-sidebarTitle: "GET /retry-policy"
-description: "List every merchant retry policy stored in the system, including attempt limits, latency budgets, and timeout-retry behaviour. Requires the internal API key."
+title: "GET /retry-policy — List All Merchant Retry Policies"
+sidebarTitle: "List Policies"
+description: "List every merchant retry policy in the system, including attempt limits, latency budgets, and timeout-retry behaviour. Requires the internal API key."
 ---
 
 The `GET /retry-policy` endpoint returns all merchant-specific retry policies configured in the orchestrator. Each policy controls how aggressively the orchestrator retries a failed or timed-out payment across alternative gateways for that merchant. You can use this endpoint to audit existing policies, compare settings across merchants, or confirm that a recent upsert persisted correctly.

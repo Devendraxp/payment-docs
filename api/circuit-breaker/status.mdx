@@ -1,6 +1,6 @@
 ---
-title: "GET /circuit-breaker/status — View Circuit States"
-sidebarTitle: "GET /status"
+title: "GET /circuit-breaker/status — View All Circuit States"
+sidebarTitle: "Circuit Status"
 description: "Retrieve the current circuit-breaker state for every tracked gateway-method pair, including failure counts, probe activity, and recent traffic window data."
 ---
 
@@ -30,7 +30,7 @@ Each circuit breaker operates as a three-state machine:
 
 ## Response
 
-The response object is keyed by `gatewayName:method` strings. Each value is a circuit state object with the following fields.
+The response object is keyed by `circuit_breaker:{gatewayName}:{method}` strings. Each value is a circuit state object with the following fields.
 
 <ResponseField name="state" type="string" required>
   Current circuit state: `CLOSED`, `OPEN`, or `HALF_OPEN`.
@@ -60,7 +60,7 @@ The response object is keyed by `gatewayName:method` strings. Each value is a ci
 
 ```json
 {
-  "razorpay:UPI": {
+  "circuit_breaker:razorpay:UPI": {
     "state": "CLOSED",
     "failureCount": 2,
     "lastFailureTs": 1718000123456,
@@ -68,7 +68,7 @@ The response object is keyed by `gatewayName:method` strings. Each value is a ci
     "recentSuccesses": 47,
     "recentAttempts": 50
   },
-  "razorpay:CARD": {
+  "circuit_breaker:razorpay:CARD": {
     "state": "OPEN",
     "failureCount": 15,
     "lastFailureTs": 1718000987654,
@@ -76,7 +76,7 @@ The response object is keyed by `gatewayName:method` strings. Each value is a ci
     "recentSuccesses": 3,
     "recentAttempts": 18
   },
-  "cashfree:UPI": {
+  "circuit_breaker:cashfree:UPI": {
     "state": "HALF_OPEN",
     "failureCount": 10,
     "lastFailureTs": 1718000456789,
@@ -84,7 +84,7 @@ The response object is keyed by `gatewayName:method` strings. Each value is a ci
     "recentSuccesses": 2,
     "recentAttempts": 3
   },
-  "payu:NETBANKING": {
+  "circuit_breaker:payu:NETBANKING": {
     "state": "CLOSED",
     "failureCount": 0,
     "lastFailureTs": 0,

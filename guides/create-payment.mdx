@@ -1,7 +1,7 @@
 ---
-title: "Create and Track Payments with Payment Gateway"
+title: "Create and Track Payments with the Payment Gateway API"
 sidebarTitle: "Create a Payment"
-description: "Learn how to create payments for UPI, card, netbanking, and wallet methods, then track status, attempts, and routing decisions."
+description: "Learn how to create payments for UPI, card, netbanking, and wallet methods, then track status, attempts, and routing decisions in real time."
 ---
 
 The Payment Gateway exposes a single `POST /payments` endpoint that accepts a payment request, selects the best available gateway, and returns a result synchronously. Every request must carry a unique `idempotency-key` header so that retrying a failed network call never creates a duplicate charge. The endpoint is rate-limited to **100 requests per minute per IP address**.
@@ -132,7 +132,7 @@ A successful call returns a JSON object with the following fields:
   "finalGateway": "cashfree",
   "totalAttempts": 2,
   "totalLatencyMs": 1340,
-  "message": "Payment completed successfully"
+  "message": "Payment processed successfully"
 }
 ```
 

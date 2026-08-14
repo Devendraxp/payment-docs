@@ -1,7 +1,7 @@
 ---
 title: "Payment Gateway: Intelligent Multi-Gateway Payment API"
 sidebarTitle: "Introduction"
-description: "Payment Gateway is a smart payment aggregator API that routes transactions across multiple gateways using real-time scoring, circuit breaking, and idempotency."
+description: "Payment Gateway routes transactions across multiple gateways using real-time scoring, automatic circuit breaking, and idempotent payment requests."
 ---
 
 Payment Gateway is a payment aggregation API that sits between your application and the underlying payment processors. Instead of integrating with a single gateway, you send one payment request and the system automatically selects the best-performing gateway in real time — maximising success rates, minimising latency, and transparently retrying across providers when a gateway fails.

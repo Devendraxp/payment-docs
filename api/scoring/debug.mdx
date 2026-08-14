@@ -1,13 +1,13 @@
 ---
-title: "GET /scoring/debug — Inspect Gateway Rankings"
-sidebarTitle: "GET /scoring/debug"
-description: "Inspect how the scoring engine ranks payment gateways for a given method, amount, and bank context — useful for tuning affinity weights and debugging routing decisions."
+title: "Score and Rank Gateways for a Payment — GET /scoring/debug"
+sidebarTitle: "Score Gateways"
+description: "Run the scoring pipeline against a synthetic payment context and inspect each gateway's composite score with a factor-by-factor breakdown."
 ---
 
 The `GET /scoring/debug` endpoint runs the full scoring pipeline against a synthetic payment context you supply via query parameters and returns each eligible gateway along with its composite score and a factor-by-factor breakdown. You can use this endpoint to understand exactly why a specific gateway is ranked first, to verify that an affinity change had the intended effect, or to reproduce a routing decision from your logs. No authentication is required.
 
 <Tip>
-  The scoring engine pulls live hot metrics (5-minute rolling success rate and p95 latency) from Redis when computing `successScore` and `latencyScore`. The rankings you see here reflect the gateway's **current health**, not just its static baseline configuration. Run the endpoint again after a few minutes to see how scores shift as recent traffic data rolls off.
+  The scoring engine uses a 5-minute rolling window of live transaction metrics when computing `successScore` and `latencyScore`. The rankings you see here reflect the gateway's **current health**, not just its static baseline configuration. Run the endpoint again after a few minutes to see how scores shift as recent traffic data rolls off.
 </Tip>
 
 ## Endpoint
@@ -27,7 +27,7 @@ GET http://localhost:3000/scoring/debug
 </ParamField>
 
 <ParamField query="bank" type="string">
-  The customer's bank name for bank-affinity scoring (e.g., `HDFC`, `ICICI`, `SBI`, `AXIS`). The value is trimmed and uppercased automatically. When omitted, the bank-affinity factor is not applied.
+  The customer's bank name for bank-affinity scoring (e.g., `HDFC`, `ICICI`, `SBI`, `AXIS`). The value is trimmed and uppercased automatically. When omitted, the bank-affinity factor defaults to a neutral score of `50`.
 </ParamField>
 
 ## Example Request
@@ -38,7 +38,7 @@ curl "http://localhost:3000/scoring/debug?method=UPI&bank=HDFC&amountMinor=33000
 
 ## Scoring Weights
 
-The composite score is the weighted sum of six individual factors:
+The composite score is the weighted sum of six individual factors. Each factor is computed on a 0–100 scale, then multiplied by its weight and summed to produce the final score.
 
 | Factor | Field | Weight |
 |--------|-------|--------|
@@ -67,17 +67,17 @@ The composite score is the weighted sum of six individual factors:
   <Expandable title="rankedGateways item fields">
     <ResponseField name="gatewayName" type="string">Internal gateway name (e.g., `"razorpay"`).</ResponseField>
     <ResponseField name="displayName" type="string">Human-readable gateway name.</ResponseField>
-    <ResponseField name="score" type="number">Composite score (weighted sum of all factors). Higher is better.</ResponseField>
+    <ResponseField name="score" type="number">Composite score — the weighted sum of all six factors. Higher is better.</ResponseField>
     <ResponseField name="factors" type="object">
-      Individual factor scores that make up the composite.
+      Individual factor scores (each on a 0–100 scale) before weighting is applied.
 
       <Expandable title="factors fields">
-        <ResponseField name="successScore" type="number">Score contribution from the gateway's recent success rate (35 % weight).</ResponseField>
-        <ResponseField name="latencyScore" type="number">Score contribution from the gateway's recent p95 latency (25 % weight).</ResponseField>
-        <ResponseField name="methodScore" type="number">Score contribution from the gateway's method-affinity multiplier for the requested method (15 % weight).</ResponseField>
-        <ResponseField name="bankScore" type="number">Score contribution from the gateway's bank-affinity multiplier for the supplied bank (12 % weight).</ResponseField>
-        <ResponseField name="amountScore" type="number">Score contribution from the gateway's amount-tier multiplier for the transaction size (8 % weight).</ResponseField>
-        <ResponseField name="timeScore" type="number">Score contribution after applying the time-of-day penalty for the current UTC hour (5 % weight).</ResponseField>
+        <ResponseField name="successScore" type="number">Gateway's recent success rate mapped to a 0–100 scale (35 % weight).</ResponseField>
+        <ResponseField name="latencyScore" type="number">Gateway's recent p95 latency mapped to a 0–100 scale, where lower latency yields a higher score (25 % weight).</ResponseField>
+        <ResponseField name="methodScore" type="number">Gateway's method-affinity multiplier for the requested method, scaled to 0–100 (15 % weight).</ResponseField>
+        <ResponseField name="bankScore" type="number">Gateway's bank-affinity multiplier for the supplied bank, scaled to 0–100. Defaults to `50` when no bank is supplied or no affinity entry exists (12 % weight).</ResponseField>
+        <ResponseField name="amountScore" type="number">Gateway's amount-tier multiplier for the transaction size, scaled to 0–100 (8 % weight).</ResponseField>
+        <ResponseField name="timeScore" type="number">Gateway's time-of-day score for the current UTC hour. Defaults to `50` when no penalty entry exists for the current hour (5 % weight).</ResponseField>
       </Expandable>
     </ResponseField>
   </Expandable>
@@ -104,27 +104,27 @@ The composite score is the weighted sum of six individual factors:
     {
       "gatewayName": "razorpay",
       "displayName": "Razorpay",
-      "score": 0.8741,
+      "score": 95.88,
       "factors": {
-        "successScore": 0.87,
-        "latencyScore": 0.81,
-        "methodScore": 1.2,
-        "bankScore": 1.15,
-        "amountScore": 1.1,
-        "timeScore": 1.0
+        "successScore": 87.00,
+        "latencyScore": 89.33,
+        "methodScore": 120.00,
+        "bankScore": 115.00,
+        "amountScore": 110.00,
+        "timeScore": 50.00
       }
     },
     {
       "gatewayName": "cashfree",
       "displayName": "Cashfree",
-      "score": 0.7623,
+      "score": 83.63,
       "factors": {
-        "successScore": 0.83,
-        "latencyScore": 0.74,
-        "methodScore": 1.1,
-        "bankScore": 1.0,
-        "amountScore": 1.0,
-        "timeScore": 1.0
+        "successScore": 83.00,
+        "latencyScore": 86.33,
+        "methodScore": 110.00,
+        "bankScore": 50.00,
+        "amountScore": 100.00,
+        "timeScore": 50.00
       }
     }
   ]

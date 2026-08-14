@@ -1,7 +1,7 @@
 ---
-title: "Get Started with Payment Gateway in 5 Minutes"
+title: "Payment Gateway Quickstart: Your First Payment in 5 Min"
 sidebarTitle: "Quickstart"
-description: "Verify the service is running, create your first UPI payment, and retrieve its status and gateway attempts in just four steps."
+description: "Verify the service is running, create your first UPI payment, retrieve its status, and inspect gateway attempts — all in just four steps."
 ---
 
 This guide walks you through everything you need to send your first payment request and interpret the response. By the end you will have created a UPI payment, confirmed its status, and inspected which gateway processed it.
@@ -19,7 +19,7 @@ This guide walks you through everything you need to send your first payment requ
     curl http://localhost:3000/ops/readiness
     ```
 
-    A healthy service returns HTTP `200` with a JSON body indicating that the database and Redis connections are up:
+    A healthy service returns HTTP `200` with a JSON body confirming that all required service dependencies are up:
 
     ```json
     {
@@ -31,7 +31,7 @@ This guide walks you through everything you need to send your first payment requ
     }
     ```
 
-    If any dependency reports `"status": "down"`, the service is not ready to accept payments. Check that all backing services have started before proceeding.
+    If any dependency reports `"status": "down"`, the service is not yet ready to accept payments. Wait a moment and retry the readiness check before proceeding.
   </Step>
 
   <Step title="Create a UPI payment">

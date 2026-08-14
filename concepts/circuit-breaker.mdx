@@ -121,7 +121,7 @@ POST /circuit-breaker/force-open/{gatewayName}/{method}
 ```
 
 ```bash
-curl -X POST http://localhost:3000/circuit-breaker/force-open/razorpay/UPI \
+curl -X POST https://api.example.com/circuit-breaker/force-open/razorpay/UPI \
   -H "X-Internal-Api-Key: <your-internal-api-key>"
 ```
 
@@ -132,7 +132,7 @@ POST /circuit-breaker/force-close/{gatewayName}/{method}
 ```
 
 ```bash
-curl -X POST http://localhost:3000/circuit-breaker/force-close/razorpay/UPI \
+curl -X POST https://api.example.com/circuit-breaker/force-close/razorpay/UPI \
   -H "X-Internal-Api-Key: <your-internal-api-key>"
 ```
 
@@ -152,6 +152,6 @@ curl -X POST http://localhost:3000/circuit-breaker/force-close/razorpay/UPI \
   If all gateways for a given payment method have open circuits, the routing service returns no routeable candidates and the payment immediately transitions to `FAILED` with reason `No routeable gateways available`.
 </Accordion>
 
-<Accordion title="Where is circuit breaker state stored?">
-  Circuit breaker state is stored in Redis, so it is shared across all orchestrator instances and survives individual process restarts. State is lost only if Redis itself is flushed.
+<Accordion title="Is circuit breaker state shared across all instances?">
+  Yes. Circuit breaker state is shared across all gateway nodes, so a gateway tripped by traffic on one node is also blocked on every other node. State persists across deployments and is not reset by a routine service restart.
 </Accordion>

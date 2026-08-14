@@ -46,6 +46,10 @@ The response is a JSON array of attempt objects, sorted in ascending order by `a
   UUID uniquely identifying this attempt record.
 </ResponseField>
 
+<ResponseField name="paymentId" type="string">
+  The UUID of the payment this attempt belongs to.
+</ResponseField>
+
 <ResponseField name="gatewayName" type="string">
   The name of the payment gateway that was contacted for this attempt (for example, `RAZORPAY`, `PAYU`, `CASHFREE`).
 </ResponseField>
@@ -78,10 +82,6 @@ The response is a JSON array of attempt objects, sorted in ascending order by `a
   `null` when the attempt succeeded.
 </ResponseField>
 
-<ResponseField name="gatewayTxnId" type="string | null">
-  The transaction ID assigned by the gateway. Populated on a `SUCCESS` attempt; `null` otherwise.
-</ResponseField>
-
 <ResponseField name="createdAt" type="datetime">
   ISO 8601 timestamp of when this attempt was recorded.
 </ResponseField>
@@ -96,24 +96,24 @@ The following example shows a payment that failed on the first gateway (retryabl
 [
   {
     "id": "a1b2c3d4-0000-4e5f-8a9b-111111111111",
+    "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
     "gatewayName": "PAYU",
     "attemptNumber": 1,
     "status": "FAILED",
     "latencyMs": 1045,
     "errorCode": "GATEWAY_TIMEOUT",
     "errorType": "RETRYABLE",
-    "gatewayTxnId": null,
     "createdAt": "2025-01-15T10:23:45.100Z"
   },
   {
-    "id": "b2c3d4e5-0000-4f6g-9b0c-222222222222",
+    "id": "b2c3d4e5-0000-4f6a-9b0c-222222222222",
+    "paymentId": "b3e2a1d4-7f6e-4c5b-9a8d-123456789abc",
     "gatewayName": "RAZORPAY",
     "attemptNumber": 2,
     "status": "SUCCESS",
     "latencyMs": 312,
     "errorCode": null,
     "errorType": null,
-    "gatewayTxnId": "rzp_txn_abc123xyz",
     "createdAt": "2025-01-15T10:23:46.200Z"
   }
 ]

@@ -1,5 +1,5 @@
 ---
-title: "Run A/B Experiments on Gateway Routing"
+title: "Run A/B Experiments to Optimise Payment Gateway Routing"
 sidebarTitle: "Experiments"
 description: "Create and manage A/B experiments to test alternative gateway ordering strategies and measure their impact on payment success rates."
 ---
@@ -139,6 +139,20 @@ curl -X POST http://localhost:3002/experiments/{experimentId}/pause \
 ```bash
 curl -X POST http://localhost:3002/experiments/{experimentId}/complete \
   -H "X-Internal-Api-Key: your-api-key"
+```
+
+**Update** an experiment (name, weights, target methods, or config) while it is still in `DRAFT` or `ACTIVE` status:
+
+```bash
+curl -X PATCH http://localhost:3002/experiments/{experimentId} \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-Api-Key: your-api-key" \
+  -d '{
+    "name": "Cashfree first for UPI updated",
+    "controlWeight": 0.25,
+    "treatmentWeight": 0.75,
+    "targetMethods": ["UPI"]
+  }'
 ```
 
 **List** all experiments:
